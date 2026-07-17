@@ -62,7 +62,6 @@
       radial-gradient(circle at 88% 15%, rgba(8,145,178,.12), transparent 38%),
       radial-gradient(circle at 50% 95%, rgba(34,211,238,.08), transparent 45%),
       var(--bg);
-    background-attachment:fixed;
     color:var(--text);
     font-family:'Inter',sans-serif;
     min-height:100vh;
@@ -432,7 +431,7 @@
   .kanban-show-more:hover{color:var(--accent);}
   .kanban-clear-done:hover{color:var(--red);}
   .kanban-card{
-    background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:var(--shadow-card);border-radius:0;clip-path:polygon(var(--hud-cut) 0, calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut), 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut)), 0 var(--hud-cut));
+    background:var(--panel);box-shadow:var(--shadow-card);border-radius:0;clip-path:polygon(var(--hud-cut) 0, calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut), 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut)), 0 var(--hud-cut));
     padding:9px 10px;margin-bottom:8px;cursor:grab;
   }
   .kanban-card:active{cursor:grabbing;}
@@ -480,7 +479,7 @@
   .calendar-grid.week-mode .calendar-day{min-height:180px;}
 
   .calendar-day{
-    background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:8px;box-shadow:var(--shadow-card);
+    background:var(--panel);border-radius:8px;box-shadow:var(--shadow-card);
     min-height:96px;padding:6px;display:flex;flex-direction:column;gap:3px;
   }
   .calendar-day.weekend{background:var(--panel-2);}
@@ -685,7 +684,7 @@
 
   /* task card */
   .task{
-    background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:0;clip-path:polygon(var(--hud-cut) 0, calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut), 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut)), 0 var(--hud-cut));box-shadow:var(--shadow-card);
+    background:var(--panel);border-radius:0;clip-path:polygon(var(--hud-cut) 0, calc(100% - var(--hud-cut)) 0, 100% var(--hud-cut), 100% calc(100% - var(--hud-cut)), calc(100% - var(--hud-cut)) 100%, var(--hud-cut) 100%, 0 calc(100% - var(--hud-cut)), 0 var(--hud-cut));box-shadow:var(--shadow-card);
     padding:12px 14px;margin-bottom:8px;border-left:3px solid transparent;
   }
   .task[data-priority="high"]{border-left-color:var(--red);}
@@ -2591,10 +2590,12 @@ function tickClock(){
 }
 setInterval(()=>{
   tickClock(); tickTimer();
+}, 1000);
+setInterval(()=>{
   const active = document.activeElement;
   const isTyping = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
   if(!isDragging && !isTyping) render();
-}, 1000);
+}, 60000); // once a minute is plenty for "is this now overdue" — doing it every second caused visible flicker in calendar/kanban while they were open
 tickClock();
 
 // ---------- browser notifications ----------
