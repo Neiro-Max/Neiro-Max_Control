@@ -53,8 +53,12 @@
     --shadow-card: 0 0 1px rgba(34,211,238,.4), 0 8px 30px rgba(0,0,0,.5);
   }
   *{box-sizing:border-box;}
-  button, a, input, select, textarea{transition:background .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease, transform .15s ease;}
+  button, a, input, select, textarea{transition:background .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease, transform .15s ease, box-shadow .15s ease;}
   button:active{transform:scale(.97);}
+  button:not(:disabled):hover, .upload-label:hover, .doc-side-item:hover{
+    transform:scale(1.035);
+    box-shadow:0 0 12px rgba(34,211,238,.35);
+  }
   html,body{margin:0;padding:0;}
   body{
     background:
@@ -113,7 +117,7 @@
     background:var(--panel-2);border:1px solid var(--border);color:var(--text);
   }
   .panel-pill-search .global-search-input::placeholder{color:var(--text-faint);}
-  .panel-pill-doc #docCollapseIcon, .panel-pill-xlsx #xlsxCollapseIcon, .panel-pill-note #noteCollapseIcon, .panel-pill-personnel #personnelCollapseIcon, .panel-pill-trauma #scan_traumaCollapseIcon, .panel-pill-neuro #scan_neuroCollapseIcon, .panel-pill-contracts #scan_contractsCollapseIcon{
+  .panel-pill-doc #docCollapseIcon, .panel-pill-xlsx #xlsxCollapseIcon, .panel-pill-note #noteCollapseIcon, .panel-pill-personnel #personnelCollapseIcon, .panel-pill-trauma #scan_traumaCollapseIcon, .panel-pill-neuro #scan_neuroCollapseIcon, .panel-pill-contracts #scan_contractsCollapseIcon, .panel-pill-personnel .hotel-open-arrow{
     background:rgba(255,255,255,.25) !important;border-color:rgba(255,255,255,.6) !important;color:#fff !important;
   }
   .panel-pill-doc #docCount, .panel-pill-xlsx #xlsxCount, .panel-pill-note #noteCount, .panel-pill-personnel #personnelCount, .panel-pill-trauma #scan_traumaCount, .panel-pill-neuro #scan_neuroCount, .panel-pill-contracts #scan_contractsCount{
@@ -307,6 +311,18 @@
   .progress-readout{display:flex;justify-content:space-between;gap:16px;min-width:140px;}
   .progress-readout-label{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;}
   .progress-readout-num{font-size:15px;font-weight:700;color:var(--text);}
+  .chatgpt-round-btn{
+    width:104px;height:104px;border-radius:50%;flex-shrink:0;margin-left:auto;
+    background:radial-gradient(circle at 35% 30%, var(--panel-2), var(--panel));
+    border:2px solid var(--accent);cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    box-shadow:0 0 18px rgba(34,211,238,.45), inset 0 0 12px rgba(34,211,238,.15);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .chatgpt-round-btn:hover{transform:scale(1.08);box-shadow:0 0 30px rgba(34,211,238,.7), inset 0 0 16px rgba(34,211,238,.25);}
+  .chatgpt-round-btn:active{transform:scale(.96);}
+  .chatgpt-round-btn-icon{font-size:20px;filter:drop-shadow(0 0 4px var(--accent));}
+  .chatgpt-round-btn-label{font-size:10px;font-weight:700;color:var(--accent);line-height:1.2;text-align:center;}
   .progress-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
   .progress-title{
     font-size:12px;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;
@@ -774,7 +790,7 @@
   }
   .personnel-item-actions .personnel-toggle-btn:hover{color:var(--warning);}
   .personnel-item-actions .personnel-del-btn:hover{color:var(--red);}
-  #noteCollapseIcon, #docCollapseIcon, #xlsxCollapseIcon, #personnelCollapseIcon, #scan_traumaCollapseIcon, #scan_neuroCollapseIcon, #scan_contractsCollapseIcon{
+  #noteCollapseIcon, #docCollapseIcon, #xlsxCollapseIcon, #personnelCollapseIcon, #scan_traumaCollapseIcon, #scan_neuroCollapseIcon, #scan_contractsCollapseIcon, .hotel-open-arrow{
     transition:transform .15s;font-size:12px;color:var(--text-dim);
     width:20px;height:20px;border-radius:50%;background:var(--panel-2);border:1px solid var(--accent);
     display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
@@ -884,6 +900,7 @@
 
     .progress-body{gap:16px;}
     .progress-gauge-wrap{width:84px;height:84px;}
+    .chatgpt-round-btn{width:84px;height:84px;}
     .progress-readout{min-width:0;}
 
     /* bigger, easier-to-tap controls */
@@ -986,6 +1003,10 @@
         <div class="progress-readout"><span class="progress-readout-label">Выполнено</span><span class="mono progress-readout-num" id="readoutDone">0</span></div>
         <div class="progress-readout"><span class="progress-readout-label">В работе</span><span class="mono progress-readout-num" id="readoutOpen">0</span></div>
       </div>
+      <button type="button" id="chatgptRoundBtn" class="chatgpt-round-btn" title="Спросить ChatGPT">
+        <span class="chatgpt-round-btn-icon">✨</span>
+        <span class="chatgpt-round-btn-label">Спросить<br>ChatGPT</span>
+      </button>
     </div>
   </div>
 
@@ -1275,7 +1296,7 @@
     <div class="side-panel">
       <div class="side-title panel-pill-personnel" id="hotelOpenBtn" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
         <span>🏨 ОТЕЛЬ <span id="hotelCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
-        <span>→</span>
+        <span class="hotel-open-arrow">→</span>
       </div>
       <div id="hotelSaveWarning" style="display:none;"></div>
     </div>
@@ -1288,6 +1309,11 @@
     <button class="reset-btn" id="restoreBtn">Восстановить резервную копию</button>
     <br>
     <button class="reset-btn" id="resetBtn" style="margin-top:8px;">Очистить все данные</button>
+    <p style="margin-top:18px;font-size:11.5px;color:var(--text-faint);text-align:center;">
+      Приложение разработано компанией <strong style="color:var(--accent);">Neiro-Max studio</strong> — генеративный контент любой сложности<br>
+      г. Вологда · тел. для связи 8 900 501-19-42<br>
+      <span id="installCounter" style="color:var(--accent);"></span>
+    </p>
   </footer>
 
   <div class="confirm-overlay" id="customConfirmOverlay">
@@ -4131,6 +4157,21 @@ document.getElementById('hotelImportFile').onchange = (e) => {
 };
 
 loadPersonnel();
+
+document.getElementById('chatgptRoundBtn').onclick = () => {
+  showToast('✨ Скоро! Функция «Спросить ChatGPT» в разработке.', 'info');
+};
+
+// ---------- shared install/open counter (free public counting service, one line, no server needed) ----------
+fetch('https://countapi.mileshilliard.com/api/v1/hit/neiro-max-control-app-2026-vologda')
+  .then(r => r.json())
+  .then(data => {
+    const el = document.getElementById('installCounter');
+    if(el && data && typeof data.value === 'number'){
+      el.textContent = `Запусков приложения: ${data.value.toLocaleString('ru-RU')}`;
+    }
+  })
+  .catch(() => { /* decorative only — fails silently if unreachable */ });
 
 // ==================== scan documents (Травматология / Неврология) ====================
 const SCAN_MODULE_NAMES = { scan_trauma: 'Сканы', scan_neuro: 'Разное', scan_contracts: 'Договоры' };
