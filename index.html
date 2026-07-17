@@ -1185,9 +1185,9 @@
     <div class="side-panel">
       <div class="side-title panel-pill-doc" id="docToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
         <span>Документы <span id="docCount" class="mono" style="color:var(--text-faint);"></span></span>
-        <span id="docCollapseIcon">▾</span>
+        <span id="docCollapseIcon" class="collapsed">▾</span>
       </div>
-      <div id="docBody">
+      <div id="docBody" class="collapsed">
         <div id="docSaveWarning" style="display:none;"></div>
         <div class="tag-filter-bar" id="docTagFilterBar" style="margin-bottom:8px;"></div>
         <div id="docSideList" class="note-list-scroll"></div>
@@ -1200,9 +1200,9 @@
     <div class="side-panel">
       <div class="side-title panel-pill-trauma" id="scan_traumaToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
         <span>Травматология <span id="scan_traumaCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
-        <span id="scan_traumaCollapseIcon">▾</span>
+        <span id="scan_traumaCollapseIcon" class="collapsed">▾</span>
       </div>
-      <div id="scan_traumaBody">
+      <div id="scan_traumaBody" class="collapsed">
         <div id="scan_traumaSaveWarning" style="display:none;"></div>
         <div id="scan_traumaSideList" class="note-list-scroll"></div>
         <div id="scan_traumaSideEmpty" class="side-empty-note" style="display:none;">Пока нет файлов.</div>
@@ -1214,9 +1214,9 @@
     <div class="side-panel">
       <div class="side-title panel-pill-neuro" id="scan_neuroToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
         <span>Неврология <span id="scan_neuroCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
-        <span id="scan_neuroCollapseIcon">▾</span>
+        <span id="scan_neuroCollapseIcon" class="collapsed">▾</span>
       </div>
-      <div id="scan_neuroBody">
+      <div id="scan_neuroBody" class="collapsed">
         <div id="scan_neuroSaveWarning" style="display:none;"></div>
         <div id="scan_neuroSideList" class="note-list-scroll"></div>
         <div id="scan_neuroSideEmpty" class="side-empty-note" style="display:none;">Пока нет файлов.</div>
@@ -1228,9 +1228,9 @@
     <div class="side-panel">
       <div class="side-title panel-pill-contracts" id="scan_contractsToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
         <span>Договоры <span id="scan_contractsCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
-        <span id="scan_contractsCollapseIcon">▾</span>
+        <span id="scan_contractsCollapseIcon" class="collapsed">▾</span>
       </div>
-      <div id="scan_contractsBody">
+      <div id="scan_contractsBody" class="collapsed">
         <div id="scan_contractsSaveWarning" style="display:none;"></div>
         <div id="scan_contractsSideList" class="note-list-scroll"></div>
         <div id="scan_contractsSideEmpty" class="side-empty-note" style="display:none;">Пока нет файлов.</div>
@@ -1242,9 +1242,9 @@
     <div class="side-panel">
       <div class="side-title panel-pill-xlsx" id="xlsxToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
         <span>Excel <span id="xlsxCount" class="mono" style="color:var(--text-faint);"></span></span>
-        <span id="xlsxCollapseIcon">▾</span>
+        <span id="xlsxCollapseIcon" class="collapsed">▾</span>
       </div>
-      <div id="xlsxBody">
+      <div id="xlsxBody" class="collapsed">
         <div id="xlsxSaveWarning" style="display:none;"></div>
         <div class="tag-filter-bar" id="xlsxTagFilterBar" style="margin-bottom:8px;"></div>
         <div id="xlsxSideList" class="note-list-scroll"></div>
@@ -1258,9 +1258,9 @@
     <div class="side-panel">
       <div class="side-title panel-pill-note" id="noteToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
         <span>Заметки / Контакты <span id="noteCount" class="mono" style="color:var(--text-faint);"></span></span>
-        <span id="noteCollapseIcon">▾</span>
+        <span id="noteCollapseIcon" class="collapsed">▾</span>
       </div>
-      <div id="noteBody">
+      <div id="noteBody" class="collapsed">
         <div id="noteSaveWarning" style="display:none;"></div>
         <input type="text" id="noteSearchInput" class="global-search-input" placeholder="Найти заметку/контакт..." style="margin-bottom:8px;">
         <div id="noteList" class="note-list-scroll"></div>
@@ -2214,12 +2214,12 @@ function render(){
   }
 
   document.getElementById('groups').innerHTML = html;
-  renderKanban();
-  renderCalendar();
   document.getElementById('taskChrome').style.display = activeEditor ? 'none' : 'block';
   document.getElementById('groups').style.display = (!activeEditor && currentView === 'list') ? 'block' : 'none';
   document.getElementById('kanbanBoard').style.display = (!activeEditor && currentView === 'kanban') ? 'grid' : 'none';
   document.getElementById('calendarView').style.display = (!activeEditor && currentView === 'calendar') ? 'block' : 'none';
+  if(!activeEditor && currentView === 'kanban') renderKanban();
+  if(!activeEditor && currentView === 'calendar') renderCalendar();
   document.getElementById('docEditorSubview').style.display = activeEditor === 'doc' ? 'block' : 'none';
   document.getElementById('xlsxEditorSubview').style.display = activeEditor === 'xlsx' ? 'block' : 'none';
   document.getElementById('hotelEditorSubview').style.display = activeEditor === 'hotel' ? 'block' : 'none';
@@ -3764,6 +3764,15 @@ async function persistNotes(){
 
 let noteSearchTerm = '';
 
+function linkifyPhones(escapedText){
+  return escapedText.replace(/(\+?\d[\d\s\-()]{5,16}\d)/g, (match) => {
+    const digits = match.replace(/[^\d]/g, '');
+    if(digits.length < 7 || digits.length > 15) return match;
+    const telHref = 'tel:' + match.replace(/[^\d+]/g, '');
+    return `<a href="${telHref}" style="color:var(--accent);text-decoration:underline;" title="Позвонить">📞 ${match}</a>`;
+  });
+}
+
 function renderNoteList(){
   const list = document.getElementById('noteList');
   const empty = document.getElementById('noteEmpty');
@@ -3797,7 +3806,7 @@ function renderNoteList(){
     <div class="note-item ${isDupe?'is-duplicate':''}">
       <button class="note-item-del" data-note-del="${n.id}" aria-label="Удалить">✕</button>
       <div class="note-item-title">${escapeHtml(n.title)}${isDupe?' <span style="color:var(--red);font-size:10px;font-weight:700;">Дубль?</span>':''}</div>
-      ${n.body ? `<div class="note-item-body">${escapeHtml(n.body)}</div>` : ''}
+      ${n.body ? `<div class="note-item-body">${linkifyPhones(escapeHtml(n.body))}</div>` : ''}
     </div>
   `;
   }).join('');
