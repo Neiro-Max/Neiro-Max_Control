@@ -1198,7 +1198,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-trauma" id="scan_traumaToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>Травматология <span id="scan_traumaCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span>Сканы <span id="scan_traumaCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span id="scan_traumaCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="scan_traumaBody" class="collapsed">
@@ -1212,7 +1212,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-neuro" id="scan_neuroToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>Неврология <span id="scan_neuroCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span>Разное <span id="scan_neuroCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span id="scan_neuroCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="scan_neuroBody" class="collapsed">
@@ -4133,7 +4133,7 @@ document.getElementById('hotelImportFile').onchange = (e) => {
 loadPersonnel();
 
 // ==================== scan documents (Травматология / Неврология) ====================
-const SCAN_MODULE_NAMES = { scan_trauma: 'Травматология', scan_neuro: 'Неврология', scan_contracts: 'Договоры' };
+const SCAN_MODULE_NAMES = { scan_trauma: 'Сканы', scan_neuro: 'Разное', scan_contracts: 'Договоры' };
 let scanModules = {
   scan_trauma: { items: [], saveEnabled: false, contentCache: {} },
   scan_neuro: { items: [], saveEnabled: false, contentCache: {} },
