@@ -293,7 +293,7 @@
   .progress-panel::before{top:6px;left:6px;border-top:2px solid var(--accent);border-left:2px solid var(--accent);}
   .progress-panel::after{top:6px;right:6px;border-top:2px solid var(--accent);border-right:2px solid var(--accent);}
   .progress-body{display:flex;flex-direction:column;gap:16px;}
-  .progress-circles-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+  .progress-circles-row{display:flex;align-items:center;justify-content:center;gap:32px;flex-wrap:wrap;margin:0 auto;}
   .progress-gauge-wrap{position:relative;width:104px;height:104px;flex-shrink:0;}
   .progress-gauge{width:100%;height:100%;transform:rotate(-90deg);}
   .progress-gauge-track{fill:none;stroke:var(--panel-2);stroke-width:8;}
@@ -1790,6 +1790,14 @@ function levelForCount(c){
 function renderProgressPanel(){
   const counts = completionCounts();
   document.getElementById('streakNum').textContent = computeStreak(counts);
+
+  const heatmapWrap = document.getElementById('heatmap').closest('.heatmap-wrap');
+  const hasHistory = Object.keys(counts).length > 0;
+  heatmapWrap.style.display = hasHistory ? '' : 'none';
+  if(!hasHistory){
+    document.getElementById('heatmap').innerHTML = '';
+    return;
+  }
 
   const weeks = 14;
   const today = new Date(); today.setHours(0,0,0,0);
