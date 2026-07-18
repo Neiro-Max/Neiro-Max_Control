@@ -292,7 +292,8 @@
   }
   .progress-panel::before{top:6px;left:6px;border-top:2px solid var(--accent);border-left:2px solid var(--accent);}
   .progress-panel::after{top:6px;right:6px;border-top:2px solid var(--accent);border-right:2px solid var(--accent);}
-  .progress-body{display:flex;align-items:center;gap:28px;flex-wrap:wrap;}
+  .progress-body{display:flex;flex-direction:column;gap:16px;}
+  .progress-circles-row{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
   .progress-gauge-wrap{position:relative;width:104px;height:104px;flex-shrink:0;}
   .progress-gauge{width:100%;height:100%;transform:rotate(-90deg);}
   .progress-gauge-track{fill:none;stroke:var(--panel-2);stroke-width:8;}
@@ -307,22 +308,37 @@
     font-size:10px;color:var(--text-faint);text-align:center;line-height:1.3;
   }
   .progress-gauge-center span:first-child{font-size:19px;font-weight:700;color:var(--accent);}
-  .progress-readouts{display:flex;flex-direction:column;gap:8px;flex-shrink:0;}
-  .progress-readout{display:flex;justify-content:space-between;gap:16px;min-width:140px;}
+  .progress-readouts{display:flex;justify-content:center;gap:32px;flex-wrap:wrap;}
+  .progress-readout{display:flex;flex-direction:column;align-items:center;gap:2px;}
   .progress-readout-label{font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;}
   .progress-readout-num{font-size:15px;font-weight:700;color:var(--text);}
-  .chatgpt-round-btn{
-    width:104px;height:104px;border-radius:50%;flex-shrink:0;margin-left:auto;
+  .chatgpt-round-btn, .mic-round-btn{
+    width:104px;height:104px;border-radius:50%;flex-shrink:0;
     background:radial-gradient(circle at 35% 30%, var(--panel-2), var(--panel));
     border:2px solid var(--accent);cursor:pointer;
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
     box-shadow:0 0 18px rgba(34,211,238,.45), inset 0 0 12px rgba(34,211,238,.15);
-    transition:transform .15s ease, box-shadow .15s ease;
+    transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+    padding:0;
   }
-  .chatgpt-round-btn:hover{transform:scale(1.08);box-shadow:0 0 30px rgba(34,211,238,.7), inset 0 0 16px rgba(34,211,238,.25);}
-  .chatgpt-round-btn:active{transform:scale(.96);}
-  .chatgpt-round-btn-icon{font-size:20px;filter:drop-shadow(0 0 4px var(--accent));}
-  .chatgpt-round-btn-label{font-size:10px;font-weight:700;color:var(--accent);line-height:1.2;text-align:center;}
+  .chatgpt-round-btn:hover, .mic-round-btn:hover{transform:scale(1.08);box-shadow:0 0 30px rgba(34,211,238,.7), inset 0 0 16px rgba(34,211,238,.25);}
+  .chatgpt-round-btn:active, .mic-round-btn:active{transform:scale(.96);}
+  .chatgpt-round-btn-icon, .mic-round-btn-icon{font-size:20px;filter:drop-shadow(0 0 4px var(--accent));display:flex;}
+  .chatgpt-round-btn-label, .mic-round-btn-label{font-size:10px;font-weight:700;color:var(--accent);line-height:1.2;text-align:center;}
+  .mic-round-btn.listening{
+    border-color:var(--red);
+    box-shadow:0 0 18px rgba(214,68,79,.5), inset 0 0 12px rgba(214,68,79,.2);
+    animation:mic-pulse 1.2s ease-in-out infinite;
+  }
+  .mic-round-btn.listening .mic-round-btn-icon, .mic-round-btn.listening .mic-round-btn-label{
+    color:var(--red);filter:drop-shadow(0 0 4px var(--red));
+  }
+  .mic-round-btn:disabled{opacity:.4;cursor:not-allowed;}
+  .mic-round-btn:disabled:hover{transform:none;box-shadow:0 0 18px rgba(34,211,238,.45), inset 0 0 12px rgba(34,211,238,.15);}
+  @keyframes mic-pulse{
+    0%,100%{box-shadow:0 0 18px rgba(214,68,79,.5), inset 0 0 12px rgba(214,68,79,.2);}
+    50%{box-shadow:0 0 30px rgba(214,68,79,.75), inset 0 0 16px rgba(214,68,79,.3);}
+  }
   .progress-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
   .progress-title{
     font-size:12px;text-transform:uppercase;letter-spacing:0.08em;font-weight:600;
@@ -839,24 +855,6 @@
   }
   .ai-btn-inline:disabled{opacity:.5;cursor:default;text-decoration:none;}
 
-  /* voice input */
-  .field-with-mic{position:relative;}
-  .field-with-mic input{padding-right:38px !important;}
-  .mic-btn{
-    position:absolute;right:5px;top:50%;transform:translateY(calc(-50% + 9px));
-    width:26px;height:26px;border-radius:50%;border:1px solid var(--border);
-    background:var(--panel-2);color:var(--text-dim);cursor:pointer;
-    display:flex;align-items:center;justify-content:center;font-size:13px;
-    padding:0;transition:color .15s,border-color .15s;
-  }
-  .mic-btn:hover{color:var(--accent);border-color:var(--accent);}
-  .mic-btn.listening{color:var(--red);border-color:var(--red);animation:mic-pulse 1.2s ease-in-out infinite;}
-  .mic-btn:disabled{opacity:.35;cursor:not-allowed;}
-  @keyframes mic-pulse{
-    0%,100%{box-shadow:0 0 0 0 rgba(214,68,79,.35);}
-    50%{box-shadow:0 0 0 6px rgba(214,68,79,0);}
-  }
-
   .timer-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
   .timer-display{
     font-size:13px;color:var(--text-dim);background:var(--panel-2);border:1px solid var(--border);
@@ -918,7 +916,7 @@
 
     .progress-body{gap:16px;}
     .progress-gauge-wrap{width:84px;height:84px;}
-    .chatgpt-round-btn{width:84px;height:84px;}
+    .chatgpt-round-btn, .mic-round-btn{width:84px;height:84px;}
     .progress-readout{min-width:0;}
 
     /* bigger, easier-to-tap controls */
@@ -1006,25 +1004,41 @@
       <div class="heatmap-wrap">
         <div class="heatmap" id="heatmap"></div>
       </div>
-      <div class="progress-gauge-wrap">
-        <svg viewBox="0 0 100 100" class="progress-gauge">
-          <circle cx="50" cy="50" r="42" class="progress-gauge-track"/>
-          <circle cx="50" cy="50" r="42" class="progress-gauge-fill" id="progressGaugeFill"/>
-        </svg>
-        <div class="progress-gauge-center">
-          <span class="mono" id="progressGaugeNum">0%</span>
-          <span>выполнено</span>
+      <div class="progress-circles-row">
+        <button type="button" id="micRoundBtn" class="mic-round-btn" title="Голосовой ввод задачи">
+          <span class="mic-round-btn-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </span>
+          <span class="mic-round-btn-label">Голосовой<br>ввод</span>
+        </button>
+
+        <div class="progress-gauge-wrap">
+          <svg viewBox="0 0 100 100" class="progress-gauge">
+            <circle cx="50" cy="50" r="42" class="progress-gauge-track"/>
+            <circle cx="50" cy="50" r="42" class="progress-gauge-fill" id="progressGaugeFill"/>
+          </svg>
+          <div class="progress-gauge-center">
+            <span class="mono" id="progressGaugeNum">0%</span>
+            <span>выполнено</span>
+          </div>
         </div>
+
+        <button type="button" id="chatgptRoundBtn" class="chatgpt-round-btn" title="Спросить ChatGPT">
+          <span class="chatgpt-round-btn-icon">✨</span>
+          <span class="chatgpt-round-btn-label">Спросить<br>ChatGPT</span>
+        </button>
       </div>
+
       <div class="progress-readouts">
         <div class="progress-readout"><span class="progress-readout-label">Всего задач</span><span class="mono progress-readout-num" id="readoutTotal">0</span></div>
         <div class="progress-readout"><span class="progress-readout-label">Выполнено</span><span class="mono progress-readout-num" id="readoutDone">0</span></div>
         <div class="progress-readout"><span class="progress-readout-label">В работе</span><span class="mono progress-readout-num" id="readoutOpen">0</span></div>
       </div>
-      <button type="button" id="chatgptRoundBtn" class="chatgpt-round-btn" title="Спросить ChatGPT">
-        <span class="chatgpt-round-btn-icon">✨</span>
-        <span class="chatgpt-round-btn-label">Спросить<br>ChatGPT</span>
-      </button>
     </div>
   </div>
 
@@ -1033,10 +1047,7 @@
   <div class="task-form" id="taskForm">
     <div class="field">
       <label for="titleInput">Название</label>
-      <div class="field-with-mic">
-        <input type="text" id="titleInput" placeholder="Например: Подготовить отчёт по проекту" required>
-        <button type="button" class="mic-btn" id="titleMicBtn" title="Голосовой ввод">🎤</button>
-      </div>
+      <input type="text" id="titleInput" placeholder="Например: Подготовить отчёт по проекту" required>
     </div>
     <div class="row2">
       <div class="field">
@@ -2503,7 +2514,16 @@ toggleFormBtn.onclick = () => {
   document.getElementById('titleInput').focus();
 };
 
-attachVoiceInput(document.getElementById('titleInput'), document.getElementById('titleMicBtn'));
+// the round mic button lives in the progress panel, away from the task
+// form — make sure the form (and its title field) is visible before
+// voice input starts writing into it
+document.getElementById('micRoundBtn').addEventListener('click', () => {
+  if(!form.classList.contains('open')){
+    form.classList.add('open');
+    toggleFormBtn.style.display = 'none';
+  }
+});
+attachVoiceInput(document.getElementById('titleInput'), document.getElementById('micRoundBtn'));
 function resetTaskForm(){
   document.getElementById('titleInput').value = '';
   document.getElementById('deadlineInput').value = '';
