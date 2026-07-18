@@ -839,6 +839,24 @@
   }
   .ai-btn-inline:disabled{opacity:.5;cursor:default;text-decoration:none;}
 
+  /* voice input */
+  .field-with-mic{position:relative;}
+  .field-with-mic input{padding-right:38px !important;}
+  .mic-btn{
+    position:absolute;right:5px;top:50%;transform:translateY(calc(-50% + 9px));
+    width:26px;height:26px;border-radius:50%;border:1px solid var(--border);
+    background:var(--panel-2);color:var(--text-dim);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;font-size:13px;
+    padding:0;transition:color .15s,border-color .15s;
+  }
+  .mic-btn:hover{color:var(--accent);border-color:var(--accent);}
+  .mic-btn.listening{color:var(--red);border-color:var(--red);animation:mic-pulse 1.2s ease-in-out infinite;}
+  .mic-btn:disabled{opacity:.35;cursor:not-allowed;}
+  @keyframes mic-pulse{
+    0%,100%{box-shadow:0 0 0 0 rgba(214,68,79,.35);}
+    50%{box-shadow:0 0 0 6px rgba(214,68,79,0);}
+  }
+
   .timer-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
   .timer-display{
     font-size:13px;color:var(--text-dim);background:var(--panel-2);border:1px solid var(--border);
@@ -1015,7 +1033,10 @@
   <div class="task-form" id="taskForm">
     <div class="field">
       <label for="titleInput">Название</label>
-      <input type="text" id="titleInput" placeholder="Например: Подготовить отчёт по проекту" required>
+      <div class="field-with-mic">
+        <input type="text" id="titleInput" placeholder="Например: Подготовить отчёт по проекту" required>
+        <button type="button" class="mic-btn" id="titleMicBtn" title="Голосовой ввод">🎤</button>
+      </div>
     </div>
     <div class="row2">
       <div class="field">
@@ -1403,6 +1424,79 @@ document.getElementById('themeLightBtn').onclick = () => setTheme('light');
 document.getElementById('themeDarkBtn').onclick = () => setTheme('dark');
 
 loadTheme();
+
+// ---------- voice input (Web Speech API) ----------
+// Reusable: attachVoiceInput(inputEl, micBtnEl) wires a mic button to any
+// text input/textarea. Works in Chrome/Edge (desktop & Android); Safari
+// support is spotty, Firefox has none — the button just disables itself
+// with an explanatory title if the API isn't available.
+const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function attachVoiceInput(inputEl, micBtn){
+  if(!SpeechRecognitionCtor){
+    micBtn.disabled = true;
+    micBtn.title = 'Голосовой ввод не поддерживается этим браузером (попробуйте Chrome)';
+    return;
+  }
+
+  const recognition = new SpeechRecognitionCtor();
+  recognition.lang = 'ru-RU';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  let listening = false;
+  let baseValue = ''; // text already in the field before this listening session
+  let finalTranscript = '';
+
+  recognition.onresult = (event) => {
+    let interim = '';
+    finalTranscript = '';
+    for(let i = 0; i < event.results.length; i++){
+      const chunk = event.results[i][0].transcript;
+      if(event.results[i].isFinal) finalTranscript += chunk;
+      else interim += chunk;
+    }
+    const sep = baseValue && !baseValue.endsWith(' ') ? ' ' : '';
+    inputEl.value = baseValue + sep + finalTranscript + interim;
+  };
+
+  recognition.onerror = (event) => {
+    if(event.error === 'not-allowed' || event.error === 'service-not-allowed'){
+      showToast('Нет доступа к микрофону — разрешите доступ в настройках браузера.');
+    } else if(event.error !== 'no-speech' && event.error !== 'aborted'){
+      showToast('Ошибка распознавания речи: ' + event.error);
+    }
+  };
+
+  recognition.onend = () => {
+    listening = false;
+    micBtn.classList.remove('listening');
+    // commit final transcript (drop any leftover interim text) so a stray
+    // half-recognized word doesn't linger in the field
+    if(finalTranscript){
+      const sep = baseValue && !baseValue.endsWith(' ') ? ' ' : '';
+      inputEl.value = baseValue + sep + finalTranscript;
+    }
+    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  micBtn.addEventListener('click', () => {
+    if(listening){
+      recognition.stop();
+      return;
+    }
+    baseValue = inputEl.value.trim();
+    finalTranscript = '';
+    try{
+      recognition.start();
+      listening = true;
+      micBtn.classList.add('listening');
+      inputEl.focus();
+    }catch(e){
+      // start() throws if already running (e.g. double click) — ignore
+    }
+  });
+}
 
 const STORAGE_KEY = 'tasks-v1';
 let tasks = [];
@@ -2408,6 +2502,8 @@ toggleFormBtn.onclick = () => {
   toggleFormBtn.style.display = 'none';
   document.getElementById('titleInput').focus();
 };
+
+attachVoiceInput(document.getElementById('titleInput'), document.getElementById('titleMicBtn'));
 function resetTaskForm(){
   document.getElementById('titleInput').value = '';
   document.getElementById('deadlineInput').value = '';
