@@ -537,6 +537,7 @@
   .calendar-task-chip.p-high{border-left-color:var(--red);background:rgba(232,92,74,.14);}
   .calendar-task-chip.p-medium{border-left-color:var(--warning);background:rgba(217,119,6,.14);}
   .calendar-task-chip.p-low{border-left-color:var(--blue);background:rgba(91,155,213,.14);}
+  .chip-time{color:var(--text-faint);font-size:9.5px;margin-right:4px;font-weight:600;}
   .calendar-more{font-size:10px;color:var(--text-faint);padding-left:2px;}
 
   .calendar-day-list{display:flex;flex-direction:column;gap:8px;}
@@ -2222,7 +2223,10 @@ function renderDayCell(cursor, tasksByDay, opts){
 
   return `<div class="calendar-day ${isOtherMonth?'other-month':''} ${isToday?'today':''} ${isWeekend?'weekend':''}">
     <div class="calendar-day-num">${cursor.getDate()}</div>
-    ${visible.map(t => `<div class="calendar-task-chip ${t.done?'done':''} p-${t.priority}" data-cal-task="${t.id}" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</div>`).join('')}
+    ${visible.map(t => {
+      const time = new Date(t.deadline).toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
+      return `<div class="calendar-task-chip ${t.done?'done':''} p-${t.priority}" data-cal-task="${t.id}" title="${time} — ${escapeHtml(t.title)}"><span class="chip-time mono">${time}</span>${escapeHtml(t.title)}</div>`;
+    }).join('')}
     ${extra > 0 ? `<div class="calendar-more">+${extra} ещё</div>` : ''}
   </div>`;
 }
