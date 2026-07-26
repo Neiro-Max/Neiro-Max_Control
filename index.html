@@ -147,8 +147,15 @@
   .panel-pill-doc #docCount, .panel-pill-xlsx #xlsxCount, .panel-pill-note #noteCount, .panel-pill-personnel #personnelCount, .panel-pill-trauma #scan_traumaCount, .panel-pill-neuro #scan_neuroCount, .panel-pill-contracts #scan_contractsCount{
     color:rgba(255,255,255,.8) !important;
   }
-  .panel-name{cursor:text;border-radius:4px;padding:0 2px;transition:background .12s ease;}
+  .panel-name{
+    cursor:pointer;border-radius:4px;padding:0 2px;transition:background .12s ease;
+    /* без этого долгое нажатие на телефоне выделяет текст и открывает
+       системное меню "Копировать/Выделить" поверх нашего переименования */
+    user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;
+  }
   .panel-name:hover{background:rgba(255,255,255,.18);}
+  /* подсветка во время удержания: видно, что нажатие засчитано */
+  .panel-name.is-holding{background:rgba(255,255,255,.34);}
   .panel-name-input{
     font:inherit;color:#1a1a1a;background:#fff;border:1px solid rgba(255,255,255,.7);border-radius:5px;
     padding:1px 6px;outline:none;min-width:60px;max-width:180px;
@@ -543,6 +550,12 @@
   .calendar-day{
     background:var(--panel);border-radius:8px;box-shadow:var(--shadow-card);
     min-height:96px;padding:6px;display:flex;flex-direction:column;gap:3px;
+    /* Ячейка — элемент grid. По умолчанию у него min-width:auto, то есть он не
+       может стать уже своего содержимого. Внутри чипы с white-space:nowrap,
+       поэтому колонки раздувались и сетка уезжала за правый край экрана.
+       min-width:0 разрешает колонке сжиматься до 1fr. */
+    min-width:0;
+    cursor:pointer;
   }
   .calendar-day.weekend{background:var(--panel-2);}
   .calendar-day.other-month{opacity:.32;}
@@ -559,7 +572,7 @@
   .calendar-task-chip{
     font-size:11px;padding:3px 6px;border-radius:5px;background:var(--panel-2);
     color:var(--text);cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-    border-left:3px solid var(--text-faint);font-weight:500;
+    border-left:3px solid var(--text-faint);font-weight:500;min-width:0;
   }
   .calendar-task-chip.done{}
   .calendar-task-chip.done .chip-title{opacity:.5;text-decoration:line-through;}
@@ -588,11 +601,30 @@
   .cal-day-empty{color:var(--text-faint);font-size:13px;text-align:center;padding:30px 0;}
 
   @media (max-width:640px){
-    .calendar-grid{gap:4px;}
-    .calendar-day{min-height:60px;padding:4px;font-size:11px;}
-    .calendar-day-num{width:20px;height:20px;line-height:20px;font-size:12px;}
+    .calendar-grid{gap:3px;}
+    .calendar-daynames{gap:3px;}
+    .calendar-day{min-height:62px;padding:3px;font-size:11px;overflow:hidden;}
+    .calendar-day-num{width:20px;height:20px;line-height:20px;font-size:12px;margin-bottom:1px;}
     .calendar-daynames div{font-size:9px;}
-    .calendar-task-chip{font-size:9.5px;padding:2px 4px;}
+    /* На экране 360 px ячейка выходит шириной ~45 px. В одну строку время и
+       название не помещаются, поэтому на телефоне чип становится двухстрочным:
+       сверху время целиком, снизу — обрезанное название. */
+    .calendar-task-chip{
+      font-size:9.5px;padding:2px 3px;white-space:normal;
+      border-left-width:2px;line-height:1.3;
+    }
+    .chip-time{
+      display:block;margin-right:0;text-align:center;
+      font-size:9.5px;padding:1px 2px;box-shadow:none;letter-spacing:0;
+    }
+    .chip-title{
+      display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+      margin-top:1px;
+    }
+    .calendar-more{font-size:9px;}
+    /* день недели крупнее — иначе на маленьком экране не читается */
+    .cal-day-row{padding:9px 11px;gap:9px;}
+    .cal-day-row .cal-day-time{min-width:44px;font-size:12px;}
   }
 
   /* ---------- documents (editor styles; list styles live in the sidebar block) ---------- */
@@ -1273,7 +1305,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-doc" id="docToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span><span class="panel-name" data-panel-key="doc" data-default="Документы" title="Двойной клик (на телефоне — долгое нажатие) — переименовать">Документы</span> <span id="docCount" class="mono" style="color:var(--text-faint);"></span></span>
+        <span><span class="panel-name" data-panel-key="doc" data-default="Документы" title="Удерживайте, чтобы переименовать">Документы</span> <span id="docCount" class="mono" style="color:var(--text-faint);"></span></span>
         <span id="docCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="docBody" class="collapsed">
@@ -1288,7 +1320,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-trauma" id="scan_traumaToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span><span class="panel-name" data-panel-key="scan_trauma" data-default="Сканы" title="Двойной клик (на телефоне — долгое нажатие) — переименовать">Сканы</span> <span id="scan_traumaCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span><span class="panel-name" data-panel-key="scan_trauma" data-default="Сканы" title="Удерживайте, чтобы переименовать">Сканы</span> <span id="scan_traumaCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span id="scan_traumaCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="scan_traumaBody" class="collapsed">
@@ -1302,7 +1334,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-neuro" id="scan_neuroToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span><span class="panel-name" data-panel-key="scan_neuro" data-default="Разное" title="Двойной клик (на телефоне — долгое нажатие) — переименовать">Разное</span> <span id="scan_neuroCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span><span class="panel-name" data-panel-key="scan_neuro" data-default="Разное" title="Удерживайте, чтобы переименовать">Разное</span> <span id="scan_neuroCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span id="scan_neuroCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="scan_neuroBody" class="collapsed">
@@ -1316,7 +1348,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-contracts" id="scan_contractsToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span><span class="panel-name" data-panel-key="scan_contracts" data-default="Договоры" title="Двойной клик (на телефоне — долгое нажатие) — переименовать">Договоры</span> <span id="scan_contractsCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span><span class="panel-name" data-panel-key="scan_contracts" data-default="Договоры" title="Удерживайте, чтобы переименовать">Договоры</span> <span id="scan_contractsCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span id="scan_contractsCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="scan_contractsBody" class="collapsed">
@@ -1330,7 +1362,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-xlsx" id="xlsxToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span><span class="panel-name" data-panel-key="xlsx" data-default="Excel" title="Двойной клик (на телефоне — долгое нажатие) — переименовать">Excel</span> <span id="xlsxCount" class="mono" style="color:var(--text-faint);"></span></span>
+        <span><span class="panel-name" data-panel-key="xlsx" data-default="Excel" title="Удерживайте, чтобы переименовать">Excel</span> <span id="xlsxCount" class="mono" style="color:var(--text-faint);"></span></span>
         <span id="xlsxCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="xlsxBody" class="collapsed">
@@ -1346,7 +1378,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-note" id="noteToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span><span class="panel-name" data-panel-key="note" data-default="Заметки / Контакты" title="Двойной клик (на телефоне — долгое нажатие) — переименовать">Заметки / Контакты</span> <span id="noteCount" class="mono" style="color:var(--text-faint);"></span></span>
+        <span><span class="panel-name" data-panel-key="note" data-default="Заметки / Контакты" title="Удерживайте, чтобы переименовать">Заметки / Контакты</span> <span id="noteCount" class="mono" style="color:var(--text-faint);"></span></span>
         <span id="noteCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="noteBody" class="collapsed">
@@ -1364,7 +1396,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-personnel" id="hotelOpenBtn" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>🏨 <span class="panel-name" data-panel-key="hotel" data-default="ОТЕЛЬ" title="Двойной клик (на телефоне — долгое нажатие) — переименовать">ОТЕЛЬ</span> <span id="hotelCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span>🏨 <span class="panel-name" data-panel-key="hotel" data-default="ОТЕЛЬ" title="Удерживайте, чтобы переименовать">ОТЕЛЬ</span> <span id="hotelCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span class="hotel-open-arrow">→</span>
       </div>
       <div id="hotelSaveWarning" style="display:none;"></div>
@@ -2145,13 +2177,12 @@ function renderTaskCard(t){
   if(!t.done){
     const isActive = timerState.taskId === t.id;
     const mode = isActive ? timerState.mode : 'focus';
-    const secs = isActive ? timerState.secondsLeft : POMODORO_SECONDS;
-    const mm = Math.floor(secs/60), ss = secs%60;
-    const timeStr = pad(mm)+':'+pad(ss);
+    const secs = isActive ? timerRemaining() : POMODORO_SECONDS;
+    const timeStr = fmtTimer(secs);
     const count = t.pomodoroCount || 0;
     timerHtml = `
       <div class="timer-row">
-        <span class="timer-display mono ${isActive && timerState.running ? 'running':''} ${mode==='break'?'break':''}">${timeStr}</span>
+        <span class="timer-display mono ${isActive && timerState.running ? 'running':''} ${mode==='break'?'break':''}"${isActive ? ' data-timer-display="1"' : ''}>${timeStr}</span>
         ${mode==='break' ? `<span class="timer-mode-label">перерыв</span>` : ''}
         ${isActive && timerState.running
           ? `<button class="timer-btn" data-timer-pause="1">Пауза</button>`
@@ -2350,7 +2381,7 @@ function renderDayCell(cursor, tasksByDay, opts){
   const visible = dayTasks.slice(0, limit);
   const extra = dayTasks.length - visible.length;
 
-  return `<div class="calendar-day ${isOtherMonth?'other-month':''} ${isToday?'today':''} ${isWeekend?'weekend':''}">
+  return `<div class="calendar-day ${isOtherMonth?'other-month':''} ${isToday?'today':''} ${isWeekend?'weekend':''}" data-cal-day="${key}" title="Открыть день">
     <div class="calendar-day-num">${cursor.getDate()}</div>
     ${visible.map(t => {
       const time = new Date(t.deadline).toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
@@ -2360,9 +2391,29 @@ function renderDayCell(cursor, tasksByDay, opts){
   </div>`;
 }
 
+function isNarrowScreen(){
+  return window.matchMedia('(max-width:640px)').matches;
+}
+
 function wireCalendarChips(container){
   container.querySelectorAll('[data-cal-task]').forEach(chip=>{
-    chip.onclick = () => toggleDone(chip.dataset.calTask);
+    chip.onclick = (e) => {
+      e.stopPropagation();   // чтобы не открылся ещё и режим "День"
+      toggleDone(chip.dataset.calTask);
+    };
+  });
+
+  // Тап по свободному месту в клетке открывает этот день списком: там время и
+  // название видно полностью. На маленьком экране это основной способ прочитать,
+  // что именно назначено на день.
+  container.querySelectorAll('[data-cal-day]').forEach(cell=>{
+    cell.onclick = (e) => {
+      if(e.target.closest('[data-cal-task]')) return;
+      const parts = cell.dataset.calDay.split('-').map(Number);
+      calendarAnchor = new Date(parts[0], parts[1]-1, parts[2]);
+      calendarAnchor.setHours(0,0,0,0);
+      setCalSubView('day');
+    };
   });
 }
 
@@ -2382,7 +2433,7 @@ function renderMonthView(){
   let html = '';
   const cursor = new Date(gridStart);
   for(let i=0; i<42; i++){
-    html += renderDayCell(cursor, tasksByDay, { month, today, limit: 3 });
+    html += renderDayCell(cursor, tasksByDay, { month, today, limit: isNarrowScreen() ? 2 : 3 });
     cursor.setDate(cursor.getDate()+1);
   }
   const grid = document.getElementById('calendarGrid');
@@ -2538,10 +2589,10 @@ function attachTaskEvents(){
     btn.onclick = () => startTimer(btn.dataset.timerStart);
   });
   document.querySelectorAll('[data-timer-pause]').forEach(btn=>{
-    btn.onclick = () => { timerState.running = false; render(); };
+    btn.onclick = pauseTimer;
   });
   document.querySelectorAll('[data-timer-reset]').forEach(btn=>{
-    btn.onclick = () => { timerState = { taskId:null, secondsLeft:POMODORO_SECONDS, running:false, mode:'focus' }; render(); };
+    btn.onclick = resetTimer;
   });
   const ct = document.getElementById('completedToggle');
   if(ct) ct.onclick = () => { showCompleted = !showCompleted; render(); };
@@ -2744,15 +2795,50 @@ document.getElementById('resetBtn').onclick = () => {
 // ---------- pomodoro timer ----------
 const POMODORO_SECONDS = 25 * 60;
 const BREAK_SECONDS = 5 * 60;
-let timerState = { taskId: null, secondsLeft: POMODORO_SECONDS, running: false, mode: 'focus' };
+// endsAt — момент окончания в миллисекундах. Остаток считается от системных
+// часов, а не накоплением "минус секунда" каждый тик: setInterval в свёрнутой
+// вкладке душится браузером до одного срабатывания в минуту, и счётчик,
+// построенный на вычитании, отставал бы на всё время простоя.
+let timerState = { taskId: null, secondsLeft: POMODORO_SECONDS, running: false, mode: 'focus', endsAt: 0 };
+
+function timerRemaining(){
+  if(timerState.running) return Math.max(0, Math.round((timerState.endsAt - Date.now()) / 1000));
+  return timerState.secondsLeft;
+}
+
+function fmtTimer(secs){
+  return pad(Math.floor(secs / 60)) + ':' + pad(secs % 60);
+}
 
 function startTimer(taskId){
   if(timerState.taskId !== taskId){
-    timerState = { taskId, secondsLeft: POMODORO_SECONDS, running: true, mode: 'focus' };
+    timerState = {
+      taskId, secondsLeft: POMODORO_SECONDS, running: true, mode: 'focus',
+      endsAt: Date.now() + POMODORO_SECONDS * 1000
+    };
   } else {
     timerState.running = true;
+    timerState.endsAt = Date.now() + timerState.secondsLeft * 1000;
   }
   render();
+}
+
+function pauseTimer(){
+  timerState.secondsLeft = timerRemaining();
+  timerState.running = false;
+  render();
+}
+
+function resetTimer(){
+  timerState = { taskId:null, secondsLeft:POMODORO_SECONDS, running:false, mode:'focus', endsAt:0 };
+  render();
+}
+
+// Обновляем только текст самого счётчика. Полная перерисовка раз в секунду
+// сбрасывала бы прокрутку и ввод в полях.
+function updateTimerDisplay(){
+  const el = document.querySelector('[data-timer-display]');
+  if(el) el.textContent = fmtTimer(timerRemaining());
 }
 
 function beep(){
@@ -2778,25 +2864,34 @@ function notify(title, body){
 
 function tickTimer(){
   if(!timerState.running) return;
-  timerState.secondsLeft--;
-  if(timerState.secondsLeft <= 0){
-    beep();
-    const t = tasks.find(x=>x.id===timerState.taskId);
-    const label = t ? t.title : 'задача';
 
-    if(timerState.mode === 'focus'){
-      if(t){ t.pomodoroCount = (t.pomodoroCount||0) + 1; saveTasks(); }
-      timerState.mode = 'break';
-      timerState.secondsLeft = BREAK_SECONDS;
-      timerState.running = true;
-      notify('Фокус-сессия завершена', '25 минут на "' + label + '" позади. Время перерыва — 5 минут.');
-    } else {
-      timerState.mode = 'focus';
-      timerState.secondsLeft = POMODORO_SECONDS;
-      timerState.running = false;
-      notify('Перерыв закончен', 'Можно вернуться к "' + label + '" — нажмите старт, когда будете готовы.');
-    }
+  const left = timerRemaining();
+  timerState.secondsLeft = left;
+
+  if(left > 0){
+    updateTimerDisplay();   // <- этого не хватало: раньше значение менялось
+    return;                 //    только в памяти, а на экране висело 25:00
   }
+
+  beep();
+  const t = tasks.find(x=>x.id===timerState.taskId);
+  const label = t ? t.title : 'задача';
+
+  if(timerState.mode === 'focus'){
+    if(t){ t.pomodoroCount = (t.pomodoroCount||0) + 1; saveTasks(); }
+    timerState.mode = 'break';
+    timerState.secondsLeft = BREAK_SECONDS;
+    timerState.running = true;
+    timerState.endsAt = Date.now() + BREAK_SECONDS * 1000;
+    notify('Фокус-сессия завершена', '25 минут на "' + label + '" позади. Время перерыва — 5 минут.');
+  } else {
+    timerState.mode = 'focus';
+    timerState.secondsLeft = POMODORO_SECONDS;
+    timerState.running = false;
+    timerState.endsAt = 0;
+    notify('Перерыв закончен', 'Можно вернуться к "' + label + '" — нажмите старт, когда будете готовы.');
+  }
+  render();   // сменились цвет счётчика и набор кнопок
 }
 
 // ---------- AI task breakdown (Claude in the artifact) ----------
@@ -4199,7 +4294,6 @@ function swallowNextClick(){
 
 function beginPanelRename(nameEl){
   if(nameEl.querySelector('.panel-name-input')) return; // already editing
-  clearTimeout(hotelOpenTimer); // отменяем отложенное открытие ОТЕЛЯ
   swallowNextClick();
   const current = nameEl.textContent.trim();
   const input = document.createElement('input');
@@ -4234,24 +4328,58 @@ function beginPanelRename(nameEl){
   input.addEventListener('mousedown', (e) => e.stopPropagation());
 }
 
-document.querySelectorAll('.panel-name').forEach(nameEl => {
-  nameEl.addEventListener('dblclick', (e) => {
-    e.stopPropagation();      // don't collapse/expand the panel
-    e.preventDefault();
-    beginPanelRename(nameEl);
-  });
+// Переименование вкладки — долгим удержанием (0.6 с), одинаково мышью и пальцем.
+// Двойной клик убран: на заголовке ОТЕЛЯ он не мог сработать в принципе (первый
+// клик открывал таблицу и прятал панель), а на телефоне двойной тап перехватывает
+// сам браузер под зум.
+const PANEL_HOLD_MS = 600;
 
-  // На телефоне двойной тап часто перехватывается браузером (зум/прокрутка),
-  // поэтому там переименование вызывается долгим нажатием (~0.6 с).
+document.querySelectorAll('.panel-name').forEach(nameEl => {
   let pressTimer = null;
-  const cancelPress = () => clearTimeout(pressTimer);
-  nameEl.addEventListener('touchstart', () => {
-    cancelPress();
-    pressTimer = setTimeout(() => beginPanelRename(nameEl), 600);
+  let startX = 0, startY = 0;
+
+  const cancelPress = () => {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+    nameEl.classList.remove('is-holding');
+  };
+
+  const beginPress = (x, y) => {
+    startX = x; startY = y;
+    nameEl.classList.add('is-holding');
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      nameEl.classList.remove('is-holding');
+      beginPanelRename(nameEl);
+    }, PANEL_HOLD_MS);
+  };
+
+  // палец сдвинулся больше чем на 10 px — это прокрутка, а не удержание
+  const checkMove = (x, y) => {
+    if(Math.abs(x - startX) > 10 || Math.abs(y - startY) > 10) cancelPress();
+  };
+
+  nameEl.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    beginPress(t.clientX, t.clientY);
   }, { passive: true });
-  ['touchend','touchmove','touchcancel'].forEach(ev =>
+  nameEl.addEventListener('touchmove', (e) => {
+    const t = e.touches[0];
+    checkMove(t.clientX, t.clientY);
+  }, { passive: true });
+  ['touchend','touchcancel'].forEach(ev =>
     nameEl.addEventListener(ev, cancelPress, { passive: true })
   );
+
+  nameEl.addEventListener('mousedown', (e) => {
+    if(e.button !== 0) return;
+    beginPress(e.clientX, e.clientY);
+  });
+  nameEl.addEventListener('mousemove', (e) => checkMove(e.clientX, e.clientY));
+  ['mouseup','mouseleave'].forEach(ev => nameEl.addEventListener(ev, cancelPress));
+
+  // системное меню по правой кнопке / долгому тапу здесь только мешает
+  nameEl.addEventListener('contextmenu', (e) => e.preventDefault());
 });
 
 loadPanelNames();
@@ -4359,22 +4487,9 @@ function closeHotelEditor(){
   render();
 }
 
-// Заголовок ОТЕЛЯ одновременно открывает таблицу и содержит переименуемое
-// название. Раньше первый клик двойного клика успевал открыть таблицу и спрятать
-// боковую панель — второй клик уже не попадал по названию, и dblclick не наступал,
-// то есть переименовать было нельзя в принципе. Теперь клик именно по названию
-// откладывается: если за 260 мс приходит второй — это переименование, открытие
-// отменяется. Клик по любому другому месту заголовка (стрелка, счётчик, значок)
-// открывает таблицу сразу, как и раньше.
-let hotelOpenTimer = null;
-document.getElementById('hotelOpenBtn').onclick = (e) => {
-  if(e.target.closest('.panel-name')){
-    clearTimeout(hotelOpenTimer);
-    hotelOpenTimer = setTimeout(openHotelEditor, 260);
-    return;
-  }
-  openHotelEditor();
-};
+// Открывается сразу по клику: переименование теперь висит на удержании и
+// с обычным кликом не конфликтует.
+document.getElementById('hotelOpenBtn').onclick = openHotelEditor;
 document.getElementById('hotelBackBtn').onclick = closeHotelEditor;
 
 function hotelAutosaveIndicator(){
