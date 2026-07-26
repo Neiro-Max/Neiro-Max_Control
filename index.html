@@ -3,6 +3,26 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Content-Security-Policy: ограничивает, откуда можно грузить код и куда можно
+     отправлять данные. Даже если XSS где-то проскочит, утечь данным будет некуда.
+     script-src 'unsafe-inline' нужен потому, что весь код приложения лежит в inline-теге
+     <script> в этом же файле. Чтобы убрать 'unsafe-inline' (и тем самым заблокировать
+     подставленные onclick/onfocus), вынесите содержимое <script> в отдельный app.js
+     и подключите его через <script src="app.js"></script>.
+     connect-src: countapi нужен только для счётчика запусков — уберите строку, если счётчик не нужен. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  font-src 'self' data: https://fonts.gstatic.com;
+  img-src 'self' data: blob:;
+  media-src 'self' data: blob:;
+  object-src 'self' data: blob:;
+  frame-src 'self' data: blob:;
+  connect-src 'self' https://api.anthropic.com https://countapi.mileshilliard.com;
+  base-uri 'none';
+  form-action 'none';
+">
 <title>Neiro-Max Control</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231c180f'/%3E%3Cpath d='M22 30 L70 30 Q80 30 80 40 L80 72' stroke='%23F4CE7C' stroke-width='11' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Cpath d='M37 48 L58 48 Q66 48 66 56 L66 72' stroke='%23F4CE7C' stroke-width='11' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='37' cy='64' r='7' fill='%23F4CE7C'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -55,6 +75,7 @@
     --heatmap-empty: rgba(217,251,255,.12);
   }
   *{box-sizing:border-box;}
+  html, body{max-width:100%;overflow-x:hidden;}
   button, a, input, select, textarea{transition:background .15s ease, color .15s ease, border-color .15s ease, opacity .15s ease, transform .15s ease, box-shadow .15s ease;}
   button:active{transform:scale(.97);}
   button:not(:disabled):hover, .upload-label:hover, .doc-side-item:hover{
@@ -87,6 +108,7 @@
   }
 
   .suite-layout{display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start;}
+  .suite-layout > *{min-width:0;}
   .suite-layout.editor-open{grid-template-columns:1fr;}
   .suite-main{min-width:0;}
   .suite-sidebar{display:flex;flex-direction:column;gap:16px;position:sticky;top:20px;}
@@ -124,6 +146,12 @@
   }
   .panel-pill-doc #docCount, .panel-pill-xlsx #xlsxCount, .panel-pill-note #noteCount, .panel-pill-personnel #personnelCount, .panel-pill-trauma #scan_traumaCount, .panel-pill-neuro #scan_neuroCount, .panel-pill-contracts #scan_contractsCount{
     color:rgba(255,255,255,.8) !important;
+  }
+  .panel-name{cursor:text;border-radius:4px;padding:0 2px;transition:background .12s ease;}
+  .panel-name:hover{background:rgba(255,255,255,.18);}
+  .panel-name-input{
+    font:inherit;color:#1a1a1a;background:#fff;border:1px solid rgba(255,255,255,.7);border-radius:5px;
+    padding:1px 6px;outline:none;min-width:60px;max-width:180px;
   }
   .side-empty-note{font-size:12px;color:var(--text-faint);}
   .save-warning{
@@ -1245,7 +1273,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-doc" id="docToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>Документы <span id="docCount" class="mono" style="color:var(--text-faint);"></span></span>
+        <span><span class="panel-name" data-panel-key="doc" data-default="Документы" title="Двойной клик — переименовать">Документы</span> <span id="docCount" class="mono" style="color:var(--text-faint);"></span></span>
         <span id="docCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="docBody" class="collapsed">
@@ -1260,7 +1288,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-trauma" id="scan_traumaToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>Сканы <span id="scan_traumaCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span><span class="panel-name" data-panel-key="scan_trauma" data-default="Сканы" title="Двойной клик — переименовать">Сканы</span> <span id="scan_traumaCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span id="scan_traumaCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="scan_traumaBody" class="collapsed">
@@ -1274,7 +1302,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-neuro" id="scan_neuroToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>Разное <span id="scan_neuroCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span><span class="panel-name" data-panel-key="scan_neuro" data-default="Разное" title="Двойной клик — переименовать">Разное</span> <span id="scan_neuroCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span id="scan_neuroCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="scan_neuroBody" class="collapsed">
@@ -1288,7 +1316,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-contracts" id="scan_contractsToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>Договоры <span id="scan_contractsCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span><span class="panel-name" data-panel-key="scan_contracts" data-default="Договоры" title="Двойной клик — переименовать">Договоры</span> <span id="scan_contractsCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span id="scan_contractsCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="scan_contractsBody" class="collapsed">
@@ -1302,7 +1330,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-xlsx" id="xlsxToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>Excel <span id="xlsxCount" class="mono" style="color:var(--text-faint);"></span></span>
+        <span><span class="panel-name" data-panel-key="xlsx" data-default="Excel" title="Двойной клик — переименовать">Excel</span> <span id="xlsxCount" class="mono" style="color:var(--text-faint);"></span></span>
         <span id="xlsxCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="xlsxBody" class="collapsed">
@@ -1318,7 +1346,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-note" id="noteToggleHeader" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>Заметки / Контакты <span id="noteCount" class="mono" style="color:var(--text-faint);"></span></span>
+        <span><span class="panel-name" data-panel-key="note" data-default="Заметки / Контакты" title="Двойной клик — переименовать">Заметки / Контакты</span> <span id="noteCount" class="mono" style="color:var(--text-faint);"></span></span>
         <span id="noteCollapseIcon" class="collapsed">▾</span>
       </div>
       <div id="noteBody" class="collapsed">
@@ -1336,7 +1364,7 @@
 
     <div class="side-panel">
       <div class="side-title panel-pill-personnel" id="hotelOpenBtn" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">
-        <span>🏨 ОТЕЛЬ <span id="hotelCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
+        <span>🏨 <span class="panel-name" data-panel-key="hotel" data-default="ОТЕЛЬ" title="Двойной клик — переименовать">ОТЕЛЬ</span> <span id="hotelCount" class="mono" style="color:rgba(255,255,255,.8);"></span></span>
         <span class="hotel-open-arrow">→</span>
       </div>
       <div id="hotelSaveWarning" style="display:none;"></div>
@@ -1523,6 +1551,78 @@ let tasks = [];
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
+// ---------- нормализация данных из файлов и из хранилища ----------
+// Любые данные, пришедшие извне (импорт JSON, импорт Excel, восстановление
+// резервной копии), приводятся к известной форме: строки обрезаются, значения
+// из списков проверяются по белому списку, id принимается только если он
+// состоит из безопасных символов — иначе выдаётся новый. Это закрывает
+// подстановку произвольных значений в data-атрибуты при отрисовке.
+const SAFE_ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+const PRIORITIES = ['none','low','medium','high'];
+const STATUSES = ['todo','in_progress','done'];
+const RECURRENCES = ['none','daily','weekly'];
+
+function safeStr(v, max){ return String(v == null ? '' : v).slice(0, max || 500); }
+function safeId(v){ return (typeof v === 'string' && SAFE_ID_RE.test(v)) ? v : uid(); }
+function safeIso(v){
+  if(!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+function normalizeTask(raw){
+  const t = (raw && typeof raw === 'object') ? raw : {};
+  const done = !!t.done || t.status === 'done';
+  return {
+    id: safeId(t.id),
+    title: safeStr(t.title, 300) || 'Без названия',
+    deadline: safeIso(t.deadline),
+    priority: PRIORITIES.indexOf(t.priority) >= 0 ? t.priority : 'medium',
+    recurrence: RECURRENCES.indexOf(t.recurrence) >= 0 ? t.recurrence : 'none',
+    tags: Array.isArray(t.tags) ? t.tags.map(x => safeStr(x, 50)).filter(Boolean).slice(0, 30) : [],
+    status: STATUSES.indexOf(t.status) >= 0 ? t.status : (done ? 'done' : 'todo'),
+    subtasks: Array.isArray(t.subtasks)
+      ? t.subtasks.map(s => ({ id: safeId(s && s.id), text: safeStr(s && s.text, 300), done: !!(s && s.done) }))
+                  .filter(s => s.text).slice(0, 300)
+      : [],
+    notes: safeStr(t.notes, 5000),
+    done: done,
+    createdAt: safeIso(t.createdAt) || new Date().toISOString(),
+    completedAt: safeIso(t.completedAt),
+    pomodoroCount: Math.max(0, Math.min(9999, Math.floor(Number(t.pomodoroCount) || 0))),
+    notifiedSoon: !!t.notifiedSoon,
+    notifiedOverdue: !!t.notifiedOverdue
+  };
+}
+
+function normalizeTaskList(raw){
+  return Array.isArray(raw) ? raw.map(normalizeTask) : [];
+}
+
+function normalizePerson(raw){
+  const p = (raw && typeof raw === 'object') ? raw : {};
+  const cv = Array.isArray(p.customValues) ? p.customValues : [];
+  return {
+    id: safeId(p.id),
+    surname: safeStr(p.surname, 100),
+    name: safeStr(p.name, 100),
+    patronymic: safeStr(p.patronymic, 100),
+    year: safeStr(p.year, 20),
+    customValues: [0,1,2,3,4].map(i => safeStr(cv[i], 200)),
+    active: p.active !== false,
+    createdAt: safeIso(p.createdAt) || new Date().toISOString()
+  };
+}
+
+function normalizePersonnel(raw){
+  const d = (raw && typeof raw === 'object') ? raw : {};
+  const labels = Array.isArray(d.fieldLabels) ? d.fieldLabels : [];
+  return {
+    fieldLabels: [0,1,2,3,4].map(i => safeStr(labels[i], 40)),
+    people: Array.isArray(d.people) ? d.people.map(normalizePerson) : []
+  };
+}
+
 let saveEnabled = false;
 let lastSavedValue = null;
 
@@ -1601,16 +1701,9 @@ async function loadTasks(){
     return;
   }
 
-  tasks = res.value ? JSON.parse(res.value) : [];
+  tasks = normalizeTaskList(res.value ? JSON.parse(res.value) : []);
   saveEnabled = true;
   lastSavedValue = JSON.stringify(tasks);
-  tasks.forEach(t=>{
-    if(t.notifiedSoon===undefined) t.notifiedSoon=false;
-    if(t.notifiedOverdue===undefined) t.notifiedOverdue=false;
-    if(t.recurrence===undefined) t.recurrence='none';
-    if(t.tags===undefined) t.tags=[];
-    if(t.status===undefined) t.status = t.done ? 'done' : 'todo';
-  });
   render();
   checkReminders();
   await loadDocs();
@@ -1633,7 +1726,7 @@ async function restoreBackup(){
   try{
     const res = await window.storage.get(STORAGE_KEY + '-backup', false);
     if(!res || !res.value){ showToast('Резервная копия не найдена.'); return; }
-    const backupTasks = JSON.parse(res.value);
+    const backupTasks = normalizeTaskList(JSON.parse(res.value));
     showConfirmModal(`Восстановить ${backupTasks.length} задач(и) из резервной копии? Текущий список будет заменён.`, async () => {
       tasks = backupTasks;
       await saveTasks();
@@ -1661,8 +1754,8 @@ function importTasksFromFile(file){
   const reader = new FileReader();
   reader.onload = () => {
     try{
-      const imported = JSON.parse(reader.result);
-      if(!Array.isArray(imported)) throw new Error('bad format');
+      const imported = normalizeTaskList(JSON.parse(reader.result));
+      if(!imported.length) throw new Error('bad format');
       showConfirmModal(`Импортировать ${imported.length} задач(и)? Текущий список будет заменён.`, () => {
         tasks = imported;
         saveTasks(); render();
@@ -1968,10 +2061,40 @@ function downloadForPrint(link, title, innerHtml, extraStyle){
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+// Экранирует ВСЕ пять опасных символов, включая кавычки. Прошлая версия
+// (textContent -> innerHTML) кавычки не трогала, из-за чего значение вида
+//   " onfocus="...", попавшее в атрибут, выходило из него и выполнялось.
 function escapeHtml(str){
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
+  return String(str == null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Чистит HTML, пришедший из .docx или вставленный в contenteditable, перед тем
+// как он попадёт в DOM, в хранилище или в файл для печати. <template> инертен:
+// ни скрипты, ни img onerror внутри него не срабатывают при разборе.
+const SANITIZE_FORBIDDEN_TAGS = 'script,iframe,object,embed,link,meta,base,form,input,button,textarea,select,style,noscript';
+
+function sanitizeHtml(html){
+  const tpl = document.createElement('template');
+  tpl.innerHTML = String(html == null ? '' : html);
+  tpl.content.querySelectorAll(SANITIZE_FORBIDDEN_TAGS).forEach(el => el.remove());
+  tpl.content.querySelectorAll('*').forEach(el => {
+    Array.from(el.attributes).forEach(attr => {
+      const n = attr.name.toLowerCase();
+      const v = String(attr.value || '').replace(/[\s\u0000-\u001f]/g, '').toLowerCase();
+      if(n.startsWith('on') || n === 'srcdoc' || n === 'formaction'){
+        el.removeAttribute(attr.name);
+      } else if((n === 'href' || n === 'src' || n === 'xlink:href' || n === 'action') &&
+                (v.startsWith('javascript:') || v.startsWith('vbscript:'))){
+        el.removeAttribute(attr.name);
+      }
+    });
+  });
+  return tpl.innerHTML;
 }
 
 // Returns a Set of lowercased names that appear more than once in the list,
@@ -3084,7 +3207,7 @@ async function openDocEditor(id){
     if(html === null){
       page.innerHTML = '<p style="color:#c0392b;">Не удалось загрузить документ. Обновите страницу и попробуйте снова.</p>';
     } else {
-      page.innerHTML = html || '<p></p>';
+      page.innerHTML = sanitizeHtml(html) || '<p></p>';
     }
   }
 }
@@ -3119,7 +3242,8 @@ async function commitDocChanges(){
   meta.linkedTaskId = document.getElementById('docLinkSelect').value || null;
   meta.updatedAt = new Date().toISOString();
 
-  const html = document.getElementById('docPage').innerHTML;
+  // чистим и то, что пользователь мог вставить в редактор через Ctrl+V
+  const html = sanitizeHtml(document.getElementById('docPage').innerHTML);
   docContentCache[currentDocId] = html;
 
   const okIndex = await persistDocIndex();
@@ -3143,7 +3267,7 @@ document.getElementById('docBackBtn').onclick = async () => {
 document.getElementById('docPrintBtn').onclick = function(e){
   const meta = documents.find(d=>d.id===currentDocId);
   const title = meta ? meta.name : 'Документ';
-  downloadForPrint(e.currentTarget, title, document.getElementById('docPage').innerHTML);
+  downloadForPrint(e.currentTarget, title, sanitizeHtml(document.getElementById('docPage').innerHTML));
   clearTimeout(autosaveTimer);
   commitDocChanges(); // save in the background; doesn't need to block the download
 };
@@ -3236,17 +3360,31 @@ function deleteDoc(id){
 const docFileInput = document.getElementById('docFileInput');
 const uploadDocLabel = document.getElementById('uploadDocLabel');
 
+// Порядок важен: сначала локальная копия рядом с index.html (папка vendor/),
+// и только если её нет — CDN. Локальная копия убирает зависимость от чужого
+// сервера: подмена файла на CDN означала бы полный доступ к данным приложения.
+//
+// integrity: пока пусто -> файл грузится без проверки (как раньше). Впишите SRI-хеш
+// (на cdnjs.com у каждого файла есть кнопка "Copy SRI"; или локально:
+//   openssl dgst -sha384 -binary mammoth.browser.min.js | openssl base64 -A
+// и подставьте как 'sha384-<результат>'), тогда браузер откажется выполнять
+// подменённый файл.
 const MAMMOTH_SOURCES = [
-  'https://cdnjs.cloudflare.com/ajax/libs/mammoth.js/1.4.2/mammoth.browser.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/mammoth.js/1.6.0/mammoth.browser.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.2/mammoth.browser.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/mammoth.js/1.4.0/mammoth.browser.min.js'
+  { src: 'vendor/mammoth.browser.min.js' },
+  { src: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth.js/1.4.2/mammoth.browser.min.js', integrity: '' },
+  { src: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth.js/1.6.0/mammoth.browser.min.js', integrity: '' }
 ];
 let mammothLoadPromise = null;
 
-function loadScript(src){
+function loadScript(src, integrity){
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
+    if(integrity){
+      s.integrity = integrity;      // браузер проверит хеш файла перед выполнением
+      s.crossOrigin = 'anonymous';  // без этого integrity для стороннего домена не работает
+    } else if(/^https?:/i.test(src)){
+      console.warn('Внешний скрипт загружается без проверки целостности (SRI):', src);
+    }
     s.src = src;
     s.onload = () => resolve();
     s.onerror = () => reject(new Error('failed: ' + src));
@@ -3259,11 +3397,11 @@ async function ensureMammoth(){
   if(mammothLoadPromise) return mammothLoadPromise;
 
   mammothLoadPromise = (async () => {
-    for(const src of MAMMOTH_SOURCES){
+    for(const item of MAMMOTH_SOURCES){
       try{
-        await loadScript(src);
+        await loadScript(item.src, item.integrity);
         if(window.mammoth) return true;
-      }catch(e){ /* try next source */ }
+      }catch(e){ /* нет локальной копии или CDN недоступен — пробуем следующий источник */ }
     }
     return false;
   })();
@@ -3299,6 +3437,7 @@ docFileInput.onchange = async (e) => {
   try{
     const arrayBuffer = await file.arrayBuffer();
     const result = await window.mammoth.convertToHtml({ arrayBuffer });
+    result.value = sanitizeHtml(result.value);
 
     if(result.value.length > 4.5 * 1024 * 1024){
       showToast('Документ слишком большой для сохранения (лимит хранилища ~5 МБ на файл).');
@@ -3342,9 +3481,9 @@ let xlsxAutosaveTimer = null;
 let xlsxSaveEnabled = false;
 
 const XLSX_SOURCES = [
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.1/xlsx.full.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.mini.min.js'
+  { src: 'vendor/xlsx.full.min.js' },
+  { src: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', integrity: '' },
+  { src: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.1/xlsx.full.min.js', integrity: '' }
 ];
 let xlsxLibPromise = null;
 
@@ -3352,11 +3491,11 @@ async function ensureXLSXLib(){
   if(window.XLSX) return true;
   if(xlsxLibPromise) return xlsxLibPromise;
   xlsxLibPromise = (async () => {
-    for(const src of XLSX_SOURCES){
+    for(const item of XLSX_SOURCES){
       try{
-        await loadScript(src);
+        await loadScript(item.src, item.integrity);
         if(window.XLSX) return true;
-      }catch(e){ /* try next source */ }
+      }catch(e){ /* нет локальной копии или CDN недоступен — пробуем следующий источник */ }
     }
     return false;
   })();
@@ -3534,28 +3673,59 @@ function closeXlsxEditor(){
 }
 
 // ---------- xlsx formulas ----------
+// Таблица собирается через DOM, а не склейкой HTML-строк: значение ячейки
+// кладётся в input.value свойством, поэтому содержимое файла .xlsx в принципе
+// не может быть истолковано как разметка. Заодно это заметно быстрее на
+// больших таблицах, чем escapeHtml на каждую ячейку.
 function renderXlsxTable(grid){
   const cols = grid[0] ? grid[0].length : 0;
-  let html = '<table class="xlsx-table"><tbody><tr><td class="row-head col-head"></td>';
-  for(let c=0; c<cols; c++) html += `<td class="col-head">${colLetter(c)}</td>`;
-  html += '</tr>';
-  grid.forEach((row, r) => {
-    html += `<tr><td class="row-head">${r+1}</td>`;
-    row.forEach((val, c) => {
-      html += `<td><input class="cell-input" data-row="${r}" data-col="${c}" value="${escapeHtml(val)}"></td>`;
-    });
-    html += '</tr>';
-  });
-  html += '</tbody></table>';
-  document.getElementById('xlsxPage').innerHTML = html;
+  const page = document.getElementById('xlsxPage');
+  page.textContent = '';
 
-  document.querySelectorAll('#xlsxPage .cell-input').forEach(input=>{
-    input.oninput = () => {
-      const r = +input.dataset.row, c = +input.dataset.col;
-      xlsxContentCache[currentXlsxId][r][c] = input.value;
-      scheduleXlsxAutosave();
-    };
+  const table = document.createElement('table');
+  table.className = 'xlsx-table';
+  const tbody = document.createElement('tbody');
+
+  const headRow = document.createElement('tr');
+  const corner = document.createElement('td');
+  corner.className = 'row-head col-head';
+  headRow.appendChild(corner);
+  for(let c=0; c<cols; c++){
+    const th = document.createElement('td');
+    th.className = 'col-head';
+    th.textContent = colLetter(c);
+    headRow.appendChild(th);
+  }
+  tbody.appendChild(headRow);
+
+  grid.forEach((row, r) => {
+    const tr = document.createElement('tr');
+    const rowHead = document.createElement('td');
+    rowHead.className = 'row-head';
+    rowHead.textContent = r + 1;
+    tr.appendChild(rowHead);
+
+    row.forEach((val, c) => {
+      const td = document.createElement('td');
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'cell-input';
+      input.dataset.row = r;
+      input.dataset.col = c;
+      input.value = val == null ? '' : String(val);
+      input.oninput = () => {
+        if(!xlsxContentCache[currentXlsxId]) return;
+        xlsxContentCache[currentXlsxId][r][c] = input.value;
+        scheduleXlsxAutosave();
+      };
+      td.appendChild(input);
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
   });
+
+  table.appendChild(tbody);
+  page.appendChild(table);
 }
 
 async function openXlsxEditor(id){
@@ -3862,11 +4032,11 @@ document.getElementById('importTasksXlsxFile').onchange = async (e) => {
       }
       const priority = priorityMap[(row[2]||'').toString().trim().toLowerCase()] || 'medium';
 
-      newTasks.push({
+      newTasks.push(normalizeTask({
         id: uid(), title, deadline: deadlineISO, priority, recurrence:'none', tags:[],
         status:'todo', subtasks:[], done:false, createdAt: new Date().toISOString(),
         completedAt: null, notifiedSoon:false, notifiedOverdue:false
-      });
+      }));
     });
 
     if(newTasks.length === 0){
@@ -3992,6 +4162,78 @@ document.getElementById('noteToggleHeader').onclick = () => {
   document.getElementById('noteCollapseIcon').classList.toggle('collapsed');
 };
 
+// ---- Panel renaming (double-click a panel title to rename it) ----
+const PANEL_NAMES_LS = 'task-control::panel-names';
+
+function loadPanelNames(){
+  let saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(PANEL_NAMES_LS) || '{}'); }catch(e){ saved = {}; }
+  document.querySelectorAll('.panel-name').forEach(el => {
+    const key = el.dataset.panelKey;
+    if(saved[key] && typeof saved[key] === 'string'){
+      el.textContent = saved[key];
+    }
+  });
+}
+
+function savePanelName(key, value){
+  let saved = {};
+  try{ saved = JSON.parse(localStorage.getItem(PANEL_NAMES_LS) || '{}'); }catch(e){ saved = {}; }
+  const el = document.querySelector('.panel-name[data-panel-key="'+key+'"]');
+  const def = el ? el.dataset.default : '';
+  if(!value || value === def){
+    delete saved[key]; // back to default -> don't store
+  } else {
+    saved[key] = value;
+  }
+  try{ localStorage.setItem(PANEL_NAMES_LS, JSON.stringify(saved)); }catch(e){}
+}
+
+function beginPanelRename(nameEl){
+  if(nameEl.querySelector('.panel-name-input')) return; // already editing
+  const current = nameEl.textContent.trim();
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'panel-name-input';
+  input.value = current;
+  input.maxLength = 40;
+  nameEl.textContent = '';
+  nameEl.appendChild(input);
+  input.focus();
+  input.select();
+
+  let finished = false;
+  const finish = (commit) => {
+    if(finished) return;
+    finished = true;
+    const val = commit ? input.value.trim() : current;
+    const def = nameEl.dataset.default;
+    const finalVal = val || def; // empty -> revert to default
+    nameEl.textContent = finalVal;
+    if(commit) savePanelName(nameEl.dataset.panelKey, finalVal);
+  };
+
+  input.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); finish(true); }
+    else if(e.key === 'Escape'){ e.preventDefault(); finish(false); }
+  });
+  input.addEventListener('blur', () => finish(true));
+  // keep clicks inside the input from toggling the panel
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('dblclick', (e) => e.stopPropagation());
+  input.addEventListener('mousedown', (e) => e.stopPropagation());
+}
+
+document.querySelectorAll('.panel-name').forEach(nameEl => {
+  nameEl.addEventListener('dblclick', (e) => {
+    e.stopPropagation();      // don't collapse/expand the panel
+    e.preventDefault();
+    beginPanelRename(nameEl);
+  });
+});
+
+loadPanelNames();
+
 document.getElementById('docToggleHeader').onclick = () => {
   document.getElementById('docBody').classList.toggle('collapsed');
   document.getElementById('docCollapseIcon').classList.toggle('collapsed');
@@ -4029,7 +4271,7 @@ let personnelLoaded = false;
 async function loadPersonnel(){
   const res = await loadKeyWithRetry('personnel-data');
   if(res.ok){
-    personnelData = res.value ? JSON.parse(res.value) : { fieldLabels: ['','','','',''], people: [] };
+    personnelData = normalizePersonnel(res.value ? JSON.parse(res.value) : null);
     personnelLoaded = true; // only trust in-memory data as accurate once a real fetch succeeded
   }
   personnelSaveEnabled = res.ok;
@@ -4111,15 +4353,51 @@ function hotelAutosaveIndicator(){
   }, 800);
 }
 
+// Как и таблица Excel — собирается через DOM. Здесь это важнее всего: сюда
+// попадают персональные данные, в том числе из восстановленных файлов.
 function renderHotelTable(){
   updateHotelCounts();
 
-  let html = '<table class="hotel-table"><thead><tr><th class="hotel-fixed-col">№</th>';
-  HOTEL_FIXED_COLS.forEach(label => { html += `<th class="hotel-fixed-col">${escapeHtml(label)}</th>`; });
+  const page = document.getElementById('hotelPage');
+  page.textContent = '';
+
+  const table = document.createElement('table');
+  table.className = 'hotel-table';
+
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+
+  const thNum = document.createElement('th');
+  thNum.className = 'hotel-fixed-col';
+  thNum.textContent = '№';
+  headRow.appendChild(thNum);
+
+  HOTEL_FIXED_COLS.forEach(label => {
+    const th = document.createElement('th');
+    th.className = 'hotel-fixed-col';
+    th.textContent = label;
+    headRow.appendChild(th);
+  });
+
   for(let i=0;i<5;i++){
-    html += `<th><input type="text" class="hotel-header-input" data-header-idx="${i}" value="${escapeHtml(personnelData.fieldLabels[i]||'')}" placeholder="Поле ${i+1}"></th>`;
+    const th = document.createElement('th');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'hotel-header-input';
+    input.dataset.headerIdx = i;
+    input.value = personnelData.fieldLabels[i] || '';
+    input.placeholder = 'Поле ' + (i+1);
+    th.appendChild(input);
+    headRow.appendChild(th);
   }
-  html += '<th class="hotel-actions-col">·</th></tr></thead><tbody>';
+
+  const thActions = document.createElement('th');
+  thActions.className = 'hotel-actions-col';
+  thActions.textContent = '·';
+  headRow.appendChild(thActions);
+
+  thead.appendChild(headRow);
+  table.appendChild(thead);
 
   let sorted = [...personnelData.people].sort((a,b) =>
     (a.surname||'').localeCompare(b.surname||'', 'ru') || (a.name||'').localeCompare(b.name||'', 'ru')
@@ -4132,24 +4410,57 @@ function renderHotelTable(){
     });
   }
 
+  const makeCell = (field, rowId, value) => {
+    const td = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.dataset.field = field;
+    input.dataset.row = rowId;
+    input.value = value == null ? '' : String(value);
+    td.appendChild(input);
+    return td;
+  };
+
+  const tbody = document.createElement('tbody');
   sorted.forEach((p, idx) => {
     const cv = p.customValues || [];
-    html += `<tr class="${p.active===false?'hotel-row-inactive':''}" data-row-id="${p.id}">
-      <td style="text-align:center;color:#888;background:#f8f8f8;">${idx+1}</td>
-      <td><input type="text" data-field="surname" data-row="${p.id}" value="${escapeHtml(p.surname||'')}"></td>
-      <td><input type="text" data-field="name" data-row="${p.id}" value="${escapeHtml(p.name||'')}"></td>
-      <td><input type="text" data-field="patronymic" data-row="${p.id}" value="${escapeHtml(p.patronymic||'')}"></td>
-      <td><input type="text" data-field="year" data-row="${p.id}" value="${escapeHtml(p.year||'')}"></td>
-      ${[0,1,2,3,4].map(i => `<td><input type="text" data-field="custom${i}" data-row="${p.id}" value="${escapeHtml(cv[i]||'')}"></td>`).join('')}
-      <td class="hotel-actions-col">
-        <button data-hotel-toggle="${p.id}" title="${p.active===false?'Восстановить':'Отметить выбывшим'}">${p.active===false?'↺':'✕'}</button>
-        <button data-hotel-del="${p.id}" title="Удалить навсегда">🗑</button>
-      </td>
-    </tr>`;
+    const tr = document.createElement('tr');
+    if(p.active === false) tr.className = 'hotel-row-inactive';
+    tr.dataset.rowId = p.id;
+
+    const num = document.createElement('td');
+    num.style.cssText = 'text-align:center;color:#888;background:#f8f8f8;';
+    num.textContent = idx + 1;
+    tr.appendChild(num);
+
+    tr.appendChild(makeCell('surname', p.id, p.surname));
+    tr.appendChild(makeCell('name', p.id, p.name));
+    tr.appendChild(makeCell('patronymic', p.id, p.patronymic));
+    tr.appendChild(makeCell('year', p.id, p.year));
+    for(let i=0;i<5;i++) tr.appendChild(makeCell('custom'+i, p.id, cv[i]));
+
+    const actions = document.createElement('td');
+    actions.className = 'hotel-actions-col';
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.dataset.hotelToggle = p.id;
+    toggleBtn.title = p.active === false ? 'Восстановить' : 'Отметить выбывшим';
+    toggleBtn.textContent = p.active === false ? '↺' : '✕';
+
+    const delBtn = document.createElement('button');
+    delBtn.dataset.hotelDel = p.id;
+    delBtn.title = 'Удалить навсегда';
+    delBtn.textContent = '🗑';
+
+    actions.appendChild(toggleBtn);
+    actions.appendChild(delBtn);
+    tr.appendChild(actions);
+
+    tbody.appendChild(tr);
   });
 
-  html += '</tbody></table>';
-  document.getElementById('hotelPage').innerHTML = html;
+  table.appendChild(tbody);
+  page.appendChild(table);
   wireHotelTableEvents();
 }
 
@@ -4277,8 +4588,9 @@ document.getElementById('hotelImportFile').onchange = (e) => {
   const reader = new FileReader();
   reader.onload = () => {
     try{
-      const imported = JSON.parse(reader.result);
-      if(!imported || !Array.isArray(imported.people)) throw new Error('bad shape');
+      const raw = JSON.parse(reader.result);
+      if(!raw || !Array.isArray(raw.people)) throw new Error('bad shape');
+      const imported = normalizePersonnel(raw);
       showConfirmModal(`Восстановить ${imported.people.length} запис(ей) из файла? Текущий список будет заменён.`, async () => {
         personnelData = imported;
         renderHotelTable();
@@ -4423,8 +4735,8 @@ function renderScanSideList(moduleId){
         <div class="doc-side-name">${escapeHtml(d.name)}${isDupe?' <span style="color:var(--red);font-size:10px;font-weight:700;">Дубль?</span>':''}</div>
         <div class="doc-side-sub">${new Date(d.updatedAt||d.createdAt).toLocaleDateString('ru-RU')}</div>
         ${isContracts ? `
-          <div style="display:flex;align-items:center;gap:6px;margin-top:5px;" onclick="event.stopPropagation();">
-            <input type="date" class="contract-expiry-input" data-contract-expiry="${d.id}" value="${d.expiryDate||''}" style="font-size:10.5px;padding:2px 4px;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;color:var(--text);">
+          <div style="display:flex;align-items:center;gap:6px;margin-top:5px;">
+            <input type="date" class="contract-expiry-input" data-contract-expiry="${escapeHtml(d.id)}" value="${escapeHtml(d.expiryDate||'')}" style="font-size:10.5px;padding:2px 4px;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;color:var(--text);">
             <span style="font-size:10.5px;font-weight:700;color:${status.color};">${status.text}</span>
           </div>
         ` : ''}
@@ -4499,7 +4811,7 @@ async function uploadScanFile(moduleId, file){
       if(!ready){ showToast('Не удалось загрузить модуль для чтения .docx.'); return; }
       const arrayBuffer = await file.arrayBuffer();
       const result = await window.mammoth.convertToHtml({ arrayBuffer });
-      content = result.value;
+      content = sanitizeHtml(result.value);
     } else {
       content = await readFileAsDataURL(file);
     }
@@ -4573,9 +4885,9 @@ async function openScanEditor(moduleId, id){
     return;
   }
   if(meta.type === 'docx'){
-    area.innerHTML = `<div class="doc-page" id="scanDocPage" contenteditable="true">${content}</div>`;
+    area.innerHTML = `<div class="doc-page" id="scanDocPage" contenteditable="true">${sanitizeHtml(content)}</div>`;
     document.getElementById('scanDocPage').oninput = () => {
-      mod.contentCache[id] = document.getElementById('scanDocPage').innerHTML;
+      mod.contentCache[id] = sanitizeHtml(document.getElementById('scanDocPage').innerHTML);
       scheduleScanAutosave();
     };
   } else if(meta.type === 'image'){
@@ -4647,7 +4959,7 @@ document.getElementById('scanDownloadBtn').onclick = function(e){
   if(!meta || content === undefined) return;
 
   if(meta.type === 'docx'){
-    downloadForPrint(e.currentTarget, meta.name, content);
+    downloadForPrint(e.currentTarget, meta.name, sanitizeHtml(content));
   } else {
     // image/pdf are already stored as data URLs — download directly
     e.currentTarget.href = content;
@@ -4668,7 +4980,7 @@ document.getElementById('scanPrintBtn').onclick = function(e){
 
   let innerHtml;
   if(meta.type === 'docx'){
-    innerHtml = document.getElementById('scanDocPage') ? document.getElementById('scanDocPage').innerHTML : content;
+    innerHtml = sanitizeHtml(document.getElementById('scanDocPage') ? document.getElementById('scanDocPage').innerHTML : content);
   } else if(meta.type === 'image'){
     innerHtml = `<img src="${content}" style="max-width:100%;">`;
   } else {
