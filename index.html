@@ -162,9 +162,25 @@
     padding:7px 8px;border-radius:8px;font-size:12.5px;cursor:pointer;margin-bottom:3px;
   }
   .doc-side-item:hover{background:var(--panel-2);}
-  .doc-side-item .doc-side-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* Имя показываем целиком в две строки. Раньше стояла обрезка в одну строку,
+     из-за чего длинные имена файлов было не прочитать, а метка «дубль»,
+     стоявшая после имени, вообще не попадала на экран. */
+  .doc-side-item .doc-side-name{
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;word-break:break-word;line-height:1.3;
+  }
+  /* Метка дубля вынесена в строку с датой — она короткая и не обрезается. */
+  .dupe-badge{
+    display:inline-block;margin-left:6px;padding:1px 6px;border-radius:20px;
+    background:var(--red);color:#fff;font-size:9.5px;font-weight:700;
+    letter-spacing:.3px;vertical-align:middle;
+  }
   .doc-side-item .doc-side-sub{font-size:10.5px;color:var(--text-faint);}
   .doc-side-item.is-duplicate{background:rgba(229,72,77,.14);border-left:3px solid var(--red);}
+  .upload-hint{
+    font-size:10.5px;color:var(--text-faint);line-height:1.35;
+    margin:4px 2px 0;display:block;
+  }
   .note-item.is-duplicate{background:rgba(229,72,77,.14);border-left:3px solid var(--red);}
   .side-item-icon{
     width:24px;height:24px;border-radius:7px;display:flex;align-items:center;justify-content:center;
@@ -1021,7 +1037,7 @@
       </div>
       <div class="clock-block">
         <div class="clock mono" id="clock">--:--:--</div>
-        <div class="clock-label">местное время · <span class="mono" id="buildStamp" style="cursor:pointer;text-decoration:underline dotted;" title="Нажмите — покажет состояние хранилища">сборка 8</span></div>
+        <div class="clock-label">местное время · <span class="mono" id="buildStamp" style="cursor:pointer;text-decoration:underline dotted;" title="Нажмите — покажет состояние хранилища">сборка 9</span></div>
       </div>
     </div>
   </header>
@@ -1302,6 +1318,7 @@
         <div id="docSideList" class="note-list-scroll"></div>
         <div id="docSideEmpty" class="side-empty-note" style="display:none;">Пока нет документов.</div>
         <label class="upload-label" for="docFileInput" id="uploadDocLabel">+ Загрузить (.docx)</label>
+        <span class="upload-hint">Только Word (.docx). Текст можно править прямо здесь. Для PDF, фото и сканов — разделы ниже.</span>
         <input type="file" id="docFileInput" accept=".docx" class="visually-hidden">
       </div>
     </div>
@@ -1316,6 +1333,7 @@
         <div id="scan_traumaSideList" class="note-list-scroll"></div>
         <div id="scan_traumaSideEmpty" class="side-empty-note" style="display:none;">Пока нет файлов.</div>
         <label class="upload-label" for="scan_traumaFileInput" id="scan_traumaUploadLabel">+ Загрузить (.docx, фото, PDF)</label>
+        <span class="upload-hint">Word (.docx), PDF и фотографии. Сюда — выписки, справки, результаты обследований.</span>
         <input type="file" id="scan_traumaFileInput" accept=".docx,.pdf,image/*" class="visually-hidden">
       </div>
     </div>
@@ -1330,6 +1348,7 @@
         <div id="scan_neuroSideList" class="note-list-scroll"></div>
         <div id="scan_neuroSideEmpty" class="side-empty-note" style="display:none;">Пока нет файлов.</div>
         <label class="upload-label" for="scan_neuroFileInput" id="scan_neuroUploadLabel">+ Загрузить (.docx, фото, PDF)</label>
+        <span class="upload-hint">Word (.docx), PDF и фотографии. Снимки и заключения удобно держать здесь.</span>
         <input type="file" id="scan_neuroFileInput" accept=".docx,.pdf,image/*" class="visually-hidden">
       </div>
     </div>
@@ -1344,6 +1363,7 @@
         <div id="scan_contractsSideList" class="note-list-scroll"></div>
         <div id="scan_contractsSideEmpty" class="side-empty-note" style="display:none;">Пока нет файлов.</div>
         <label class="upload-label" for="scan_contractsFileInput" id="scan_contractsUploadLabel">+ Загрузить (.docx, фото, PDF)</label>
+        <span class="upload-hint">Word (.docx), PDF и фотографии. У каждого файла можно указать дату окончания — приложение предупредит заранее.</span>
         <input type="file" id="scan_contractsFileInput" accept=".docx,.pdf,image/*" class="visually-hidden">
       </div>
     </div>
@@ -1359,6 +1379,7 @@
         <div id="xlsxSideList" class="note-list-scroll"></div>
         <div id="xlsxSideEmpty" class="side-empty-note" style="display:none;">Пока нет таблиц.</div>
         <label class="upload-label" for="xlsxFileInput" id="uploadXlsxLabel">+ Загрузить (.xlsx)</label>
+        <span class="upload-hint">Только Excel (.xlsx). Формулы и оформление не переносятся — читаются значения ячеек.</span>
         <input type="file" id="xlsxFileInput" accept=".xlsx" class="visually-hidden">
         <button class="upload-label" id="newXlsxBtn" style="margin-top:6px;border-style:solid;cursor:pointer;width:100%;">+ Новая таблица</button>
       </div>
@@ -2119,6 +2140,32 @@ function sanitizeHtml(html){
 
 // Returns a Set of lowercased names that appear more than once in the list,
 // so callers can highlight likely-accidental duplicate uploads/entries.
+// Сообщение о неподходящем файле: называет сам файл и подсказывает, куда его
+// нести. Прежний текст «поддерживаются только .docx» не отвечал на главный
+// вопрос — что делать с тем файлом, который у человека на руках.
+function wrongFormatMessage(file, expected){
+  const name = file && file.name ? file.name : 'файл';
+  const ext = (name.split('.').pop() || '').toLowerCase();
+  const head = 'Файл «' + name + '» не подходит: нужен .' + expected + '.';
+
+  if(ext === 'doc'){
+    return head + '\nЭто старый формат Word. Откройте документ в Word или Яндекс Документах и сохраните как .docx.';
+  }
+  if(ext === 'xls'){
+    return head + '\nЭто старый формат Excel. Пересохраните таблицу как .xlsx.';
+  }
+  if(ext === 'pdf'){
+    return head + '\nPDF грузится в разделы «Сканы», «Фотки» или «Договоры».';
+  }
+  if(['jpg','jpeg','png','heic','webp','gif','bmp'].indexOf(ext) >= 0){
+    return head + '\nФотографии грузятся в разделы «Сканы», «Фотки» или «Договоры».';
+  }
+  if(ext === name.toLowerCase()){
+    return head + '\nУ файла не видно расширения — так бывает при выборе из облака. Скачайте его на телефон и выберите из «Загрузок».';
+  }
+  return head;
+}
+
 function findDuplicateNames(list, nameFn){
   const counts = {};
   list.forEach(item => {
@@ -2782,7 +2829,7 @@ document.getElementById('resetBtn').onclick = () => {
 
 // Номер сборки видно в шапке приложения — по нему сразу понятно, открылась
 // новая версия страницы или браузер отдал старую из кеша.
-const BUILD = 'сборка 8 (27.07.2026)';
+const BUILD = 'сборка 9 (27.07.2026)';
 console.log('Neiro-Max Control —', BUILD);
 
 // Нажатие на номер сборки показывает состояние: сколько занято в хранилище
@@ -3284,8 +3331,8 @@ function renderDocSideList(){
     <div class="doc-side-item ${isDupe?'is-duplicate':''}" data-doc-card="${d.id}">
       <div class="side-item-icon doc-icon">📄</div>
       <div style="overflow:hidden;flex:1;">
-        <div class="doc-side-name">${escapeHtml(d.name)}${isDupe?' <span style="color:var(--red);font-size:10px;font-weight:700;">Дубль?</span>':''}</div>
-        <div class="doc-side-sub">${new Date(d.updatedAt||d.createdAt).toLocaleDateString('ru-RU')}</div>
+        <div class="doc-side-name">${escapeHtml(d.name)}</div>
+        <div class="doc-side-sub">${new Date(d.updatedAt||d.createdAt).toLocaleDateString('ru-RU')}${isDupe?' <span class="dupe-badge">ДУБЛЬ</span>':''}</div>
       </div>
       <button class="doc-side-del" data-doc-del="${d.id}" aria-label="Удалить документ">✕</button>
     </div>
@@ -3901,7 +3948,7 @@ docFileInput.onchange = async (e) => {
   e.target.value = '';
   if(!file) return;
   if(!file.name.toLowerCase().endsWith('.docx')){
-    showToast('Поддерживаются только файлы .docx.');
+    showToast(wrongFormatMessage(file, 'docx'), 'error');
     return;
   }
   if(file.size > 4 * 1024 * 1024){
@@ -4131,8 +4178,8 @@ function renderXlsxSideList(){
     <div class="doc-side-item ${isDupe?'is-duplicate':''}" data-xlsx-card="${d.id}">
       <div class="side-item-icon xlsx-icon">📊</div>
       <div style="overflow:hidden;flex:1;">
-        <div class="doc-side-name">${escapeHtml(d.name)}${isDupe?' <span style="color:var(--red);font-size:10px;font-weight:700;">Дубль?</span>':''}</div>
-        <div class="doc-side-sub">${new Date(d.updatedAt||d.createdAt).toLocaleDateString('ru-RU')}</div>
+        <div class="doc-side-name">${escapeHtml(d.name)}</div>
+        <div class="doc-side-sub">${new Date(d.updatedAt||d.createdAt).toLocaleDateString('ru-RU')}${isDupe?' <span class="dupe-badge">ДУБЛЬ</span>':''}</div>
       </div>
       <button class="doc-side-del" data-xlsx-del="${d.id}" aria-label="Удалить таблицу">✕</button>
     </div>
@@ -4408,7 +4455,7 @@ xlsxFileInput.onchange = async (e) => {
   e.target.value = '';
   if(!file) return;
   if(!file.name.toLowerCase().endsWith('.xlsx')){
-    showToast('Поддерживаются только файлы .xlsx.');
+    showToast(wrongFormatMessage(file, 'xlsx'), 'error');
     return;
   }
   if(file.size > 4 * 1024 * 1024){
@@ -4622,7 +4669,7 @@ function renderNoteList(){
     return `
     <div class="note-item ${isDupe?'is-duplicate':''}">
       <button class="note-item-del" data-note-del="${n.id}" aria-label="Удалить">✕</button>
-      <div class="note-item-title">${escapeHtml(n.title)}${isDupe?' <span style="color:var(--red);font-size:10px;font-weight:700;">Дубль?</span>':''}</div>
+      <div class="note-item-title">${escapeHtml(n.title)}${isDupe?' <span class="dupe-badge">ДУБЛЬ</span>':''}</div>
       ${n.body ? `<div class="note-item-body">${linkifyPhones(escapeHtml(n.body))}</div>` : ''}
     </div>
   `;
@@ -5273,8 +5320,8 @@ function renderScanSideList(moduleId){
     <div class="doc-side-item ${isDupe?'is-duplicate':''}" data-scan-card="${d.id}" style="${isContracts?'align-items:flex-start;':''}">
       <div class="side-item-icon" style="background:rgba(255,255,255,.08);">${iconMap[d.type]||'📄'}</div>
       <div style="overflow:hidden;flex:1;">
-        <div class="doc-side-name">${escapeHtml(d.name)}${isDupe?' <span style="color:var(--red);font-size:10px;font-weight:700;">Дубль?</span>':''}</div>
-        <div class="doc-side-sub">${new Date(d.updatedAt||d.createdAt).toLocaleDateString('ru-RU')}</div>
+        <div class="doc-side-name">${escapeHtml(d.name)}</div>
+        <div class="doc-side-sub">${new Date(d.updatedAt||d.createdAt).toLocaleDateString('ru-RU')}${isDupe?' <span class="dupe-badge">ДУБЛЬ</span>':''}</div>
         ${isContracts ? `
           <div style="display:flex;align-items:center;gap:6px;margin-top:5px;">
             <input type="date" class="contract-expiry-input" data-contract-expiry="${escapeHtml(d.id)}" value="${escapeHtml(d.expiryDate||'')}" style="font-size:10.5px;padding:2px 4px;background:var(--panel-2);border:1px solid var(--border);border-radius:5px;color:var(--text);">
