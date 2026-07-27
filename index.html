@@ -196,7 +196,7 @@
     display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;
     width:100%;max-width:480px;padding:0 16px;
   }
-  .toast{
+  .toast{white-space:pre-line;
     background:var(--panel);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-radius:10px;box-shadow:var(--shadow-card);
     padding:12px 16px;font-size:13.5px;color:var(--text);box-shadow:0 8px 24px rgba(0,0,0,.4);
     pointer-events:auto;width:100%;text-align:center;
@@ -1021,7 +1021,7 @@
       </div>
       <div class="clock-block">
         <div class="clock mono" id="clock">--:--:--</div>
-        <div class="clock-label">местное время · <span class="mono" id="buildStamp">сборка 7</span></div>
+        <div class="clock-label">местное время · <span class="mono" id="buildStamp" style="cursor:pointer;text-decoration:underline dotted;" title="Нажмите — покажет состояние хранилища">сборка 8</span></div>
       </div>
     </div>
   </header>
@@ -2782,8 +2782,40 @@ document.getElementById('resetBtn').onclick = () => {
 
 // Номер сборки видно в шапке приложения — по нему сразу понятно, открылась
 // новая версия страницы или браузер отдал старую из кеша.
-const BUILD = 'сборка 7 (27.07.2026)';
+const BUILD = 'сборка 8 (27.07.2026)';
 console.log('Neiro-Max Control —', BUILD);
+
+// Нажатие на номер сборки показывает состояние: сколько занято в хранилище
+// и умеет ли браузер распаковывать .docx. Консоли на телефоне нет, а знать
+// это нужно — иначе причину сбоя приходится угадывать.
+document.addEventListener('DOMContentLoaded', () => {
+  const stamp = document.getElementById('buildStamp');
+  if(!stamp) return;
+  stamp.onclick = () => {
+    let chars = 0, count = 0;
+    try{
+      for(let i = 0; i < localStorage.length; i++){
+        const k = localStorage.key(i);
+        chars += k.length + (localStorage.getItem(k) || '').length;
+        count++;
+      }
+    }catch(e){ /* хранилище недоступно */ }
+
+    // в localStorage символ занимает 2 байта, лимит браузера ~5 МБ
+    const kb = Math.round(chars * 2 / 1024);
+    const pct = Math.round(kb / 5120 * 100);
+    const unzip = (typeof DecompressionStream !== 'undefined') ? 'есть' : 'НЕТ';
+    const lib = window.mammoth ? 'загружена' : 'не нужна';
+
+    showToast(
+      BUILD + '\n' +
+      'Хранилище: ' + kb + ' КБ из ~5120 КБ (' + pct + '%), записей: ' + count + '\n' +
+      'Распаковка .docx в браузере: ' + unzip + '\n' +
+      'Внешняя библиотека: ' + lib,
+      'info'
+    );
+  };
+});
 
 // ---------- pomodoro timer ----------
 const POMODORO_SECONDS = 25 * 60;
