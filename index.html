@@ -10,19 +10,7 @@
      подставленные onclick/onfocus), вынесите содержимое <script> в отдельный app.js
      и подключите его через <script src="app.js"></script>.
      connect-src: countapi нужен только для счётчика запусков — уберите строку, если счётчик не нужен. -->
-<meta http-equiv="Content-Security-Policy" content="
-  default-src 'self';
-  script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com;
-  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-  font-src 'self' data: https://fonts.gstatic.com;
-  img-src 'self' data: blob:;
-  media-src 'self' data: blob:;
-  object-src 'self' data: blob:;
-  frame-src 'self' data: blob:;
-  connect-src 'self' https://api.anthropic.com https://countapi.mileshilliard.com;
-  base-uri 'none';
-  form-action 'none';
-">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob:; media-src 'self' data: blob:; object-src 'self' data: blob:; frame-src 'self' data: blob:; connect-src 'self' data: blob: https://api.anthropic.com https://countapi.mileshilliard.com https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net; base-uri 'none'; form-action 'none';">
 <title>Neiro-Max Control</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%231c180f'/%3E%3Cpath d='M22 30 L70 30 Q80 30 80 40 L80 72' stroke='%23F4CE7C' stroke-width='11' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Cpath d='M37 48 L58 48 Q66 48 66 56 L66 72' stroke='%23F4CE7C' stroke-width='11' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3Ccircle cx='37' cy='64' r='7' fill='%23F4CE7C'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1033,7 +1021,7 @@
       </div>
       <div class="clock-block">
         <div class="clock mono" id="clock">--:--:--</div>
-        <div class="clock-label">местное время</div>
+        <div class="clock-label">местное время · <span class="mono" id="buildStamp">сборка 7</span></div>
       </div>
     </div>
   </header>
@@ -2792,6 +2780,11 @@ document.getElementById('resetBtn').onclick = () => {
   });
 };
 
+// Номер сборки видно в шапке приложения — по нему сразу понятно, открылась
+// новая версия страницы или браузер отдал старую из кеша.
+const BUILD = 'сборка 7 (27.07.2026)';
+console.log('Neiro-Max Control —', BUILD);
+
 // ---------- pomodoro timer ----------
 const POMODORO_SECONDS = 25 * 60;
 const BREAK_SECONDS = 5 * 60;
@@ -3455,6 +3448,329 @@ function deleteDoc(id){
 const docFileInput = document.getElementById('docFileInput');
 const uploadDocLabel = document.getElementById('uploadDocLabel');
 
+// ============================================================================
+// Встроенное чтение .docx — без внешних библиотек и без обращений к сети.
+// .docx это ZIP-архив, внутри которого word/document.xml с текстом в формате
+// WordprocessingML. Распаковка делается штатным DecompressionStream браузера
+// ('deflate-raw'), поэтому ничего подгружать не нужно.
+// ============================================================================
+
+// ---------- ZIP ----------
+
+function zipFindEocd(view, bytes){
+  // Сигнатура конца центрального каталога: 0x06054b50. Ищем с конца, максимум
+  // 65557 байт — столько занимает каталог с максимальным комментарием.
+  const maxBack = Math.min(bytes.length, 65557);
+  for(let i = bytes.length - 22; i >= bytes.length - maxBack; i--){
+    if(i < 0) break;
+    if(view.getUint32(i, true) === 0x06054b50) return i;
+  }
+  throw new Error('это не ZIP-архив (не найден конец центрального каталога)');
+}
+
+function zipReadDirectory(arrayBuffer){
+  const bytes = new Uint8Array(arrayBuffer);
+  const view = new DataView(arrayBuffer);
+  const eocd = zipFindEocd(view, bytes);
+
+  const total = view.getUint16(eocd + 10, true);
+  let offset = view.getUint32(eocd + 16, true);
+  const entries = new Map();
+  const decoder = new TextDecoder('utf-8');
+
+  for(let i = 0; i < total; i++){
+    if(view.getUint32(offset, true) !== 0x02014b50) break; // 'PK\x01\x02'
+    const method     = view.getUint16(offset + 10, true);
+    const compSize   = view.getUint32(offset + 20, true);
+    const uncompSize = view.getUint32(offset + 24, true);
+    const nameLen    = view.getUint16(offset + 28, true);
+    const extraLen   = view.getUint16(offset + 30, true);
+    const commentLen = view.getUint16(offset + 32, true);
+    const localOff   = view.getUint32(offset + 42, true);
+    const name = decoder.decode(bytes.subarray(offset + 46, offset + 46 + nameLen));
+
+    entries.set(name, { method, compSize, uncompSize, localOff });
+    offset += 46 + nameLen + extraLen + commentLen;
+  }
+  return { bytes, view, entries };
+}
+
+async function zipInflate(zip, name){
+  const e = zip.entries.get(name);
+  if(!e) return null;
+
+  // Размеры в локальном заголовке могут быть нулевыми (при потоковой записи),
+  // поэтому берём их из центрального каталога, а из локального — только длины
+  // имени и extra-поля, чтобы найти начало данных.
+  const nameLen  = zip.view.getUint16(e.localOff + 26, true);
+  const extraLen = zip.view.getUint16(e.localOff + 28, true);
+  const start = e.localOff + 30 + nameLen + extraLen;
+  const raw = zip.bytes.subarray(start, start + e.compSize);
+
+  if(e.method === 0) return raw;                    // без сжатия
+  if(e.method !== 8) throw new Error('неподдерживаемый метод сжатия: ' + e.method);
+
+  if(typeof DecompressionStream === 'undefined'){
+    throw new Error('браузер не умеет DecompressionStream');
+  }
+  const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  const buf = await new Response(stream).arrayBuffer();
+  return new Uint8Array(buf);
+}
+
+async function zipReadText(zip, name){
+  const bytes = await zipInflate(zip, name);
+  return bytes ? new TextDecoder('utf-8').decode(bytes) : null;
+}
+
+// ---------- вспомогательное ----------
+
+function docxEscape(s){
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function docxDecodeEntities(s){
+  return String(s)
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (m, d) => String.fromCodePoint(+d))
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&amp;/g, '&');
+}
+
+function docxAttr(attrs, name){
+  const m = attrs.match(new RegExp('(?:^|\\s)' + name.replace(':', '\\:') + '\\s*=\\s*"([^"]*)"'));
+  return m ? docxDecodeEntities(m[1]) : null;
+}
+
+function docxBytesToBase64(bytes){
+  let out = '';
+  const chunk = 0x8000; // по частям, иначе на больших картинках падает стек
+  for(let i = 0; i < bytes.length; i += chunk){
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(out);
+}
+
+const DOCX_MIME = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+  bmp: 'image/bmp', webp: 'image/webp', tiff: 'image/tiff', emf: 'image/emf', wmf: 'image/wmf'
+};
+
+// ---------- связи (rels) для картинок ----------
+
+function docxParseRels(xml){
+  const rels = {};
+  if(!xml) return rels;
+  const re = /<Relationship\b([^>]*)\/?>/g;
+  let m;
+  while((m = re.exec(xml))){
+    const id = docxAttr(m[1], 'Id');
+    const target = docxAttr(m[1], 'Target');
+    if(id && target) rels[id] = target.replace(/^\/?word\//, '').replace(/^\.\//, '');
+  }
+  return rels;
+}
+
+// ---------- document.xml -> HTML ----------
+
+const DOCX_HEADINGS = {
+  'Title': 'h2', 'Heading1': 'h2', 'Heading2': 'h3', 'Heading3': 'h4',
+  'Heading4': 'h5', 'Heading5': 'h6', 'Heading6': 'h6',
+  'a2': 'h3', 'a3': 'h4' // встречается в документах из русских редакторов
+};
+
+function docxConvertBody(xml, images){
+  const out = [];            // готовые блоки верхнего уровня
+  const cellStack = [];      // буферы ячеек таблицы
+  const tableStack = [];     // собираемые таблицы
+
+  let para = null;           // текущий абзац: { style, isList, parts: [] }
+  let run = { b: false, i: false, u: false };
+  let inRunProps = false;
+  let inParaProps = false;
+  let pendingListItems = [];
+
+  const emit = (html) => {
+    if(cellStack.length) cellStack[cellStack.length - 1].push(html);
+    else if(tableStack.length) tableStack[tableStack.length - 1].push(html);
+    else out.push(html);
+  };
+
+  const flushList = () => {
+    if(pendingListItems.length){
+      emit('<ul>' + pendingListItems.join('') + '</ul>');
+      pendingListItems = [];
+    }
+  };
+
+  const closeParagraph = () => {
+    if(!para) return;
+    const inner = para.parts.join('');
+    const isEmpty = !inner.replace(/<br\s*\/?>/g, '').trim();
+
+    if(para.isList){
+      if(!isEmpty) pendingListItems.push('<li>' + inner + '</li>');
+    } else {
+      flushList();
+      const tag = DOCX_HEADINGS[para.style] || 'p';
+      emit('<' + tag + '>' + (isEmpty ? '<br>' : inner) + '</' + tag + '>');
+    }
+    para = null;
+  };
+
+  const addText = (text) => {
+    if(!para) para = { style: null, isList: false, parts: [] };
+    let html = docxEscape(text);
+    if(run.u) html = '<u>' + html + '</u>';
+    if(run.i) html = '<em>' + html + '</em>';
+    if(run.b) html = '<strong>' + html + '</strong>';
+    para.parts.push(html);
+  };
+
+  // Разбор идёт по тегам: входные данные машинно-сгенерированы и всегда
+  // корректны, поэтому потокового прохода достаточно и он не зависит от
+  // DOMParser (тот по-разному ведёт себя с пространствами имён).
+  const re = /<(\/?)([A-Za-z0-9_:.-]+)((?:"[^"]*"|'[^']*'|[^>])*?)(\/?)>/g;
+  let m, cursor = 0;
+  let inText = false;   // находимся ли внутри <w:t> — только там лежит текст
+
+  while((m = re.exec(xml))){
+    const full = m[1] !== undefined ? m[0] : m[0];
+    const closing = m[1], name = m[2], attrs = m[3], selfClose = m[4];
+    const before = xml.slice(cursor, m.index);
+    cursor = m.index + full.length;
+
+    if(inText && before) addText(docxDecodeEntities(before));
+
+    if(closing){
+      switch(name){
+        case 'w:t': inText = false; break;
+        case 'w:rPr': inRunProps = false; break;
+        case 'w:pPr': inParaProps = false; break;
+        case 'w:p': closeParagraph(); break;
+        case 'w:tc': {
+          const parts = cellStack.pop();
+          const cell = '<td>' + (parts.join('') || '<br>') + '</td>';
+          if(cellStack.length) cellStack[cellStack.length - 1].push(cell);
+          else if(tableStack.length) tableStack[tableStack.length - 1].push(cell);
+          break;
+        }
+        case 'w:tr': {
+          const parts = tableStack.pop();
+          const row = '<tr>' + parts.join('') + '</tr>';
+          tableStack[tableStack.length - 1].push(row);
+          break;
+        }
+        case 'w:tbl': {
+          const parts = tableStack.pop();
+          const table = '<table border="1" style="border-collapse:collapse;">' + parts.join('') + '</table>';
+          if(cellStack.length) cellStack[cellStack.length - 1].push(table);
+          else if(tableStack.length) tableStack[tableStack.length - 1].push(table);
+          else out.push(table);
+          break;
+        }
+      }
+      continue;
+    }
+
+    switch(name){
+      case 'w:p':
+        closeParagraph();
+        para = { style: null, isList: false, parts: [] };
+        break;
+      case 'w:pPr': inParaProps = true; break;
+      case 'w:pStyle':
+        if(inParaProps && para) para.style = docxAttr(attrs, 'w:val');
+        break;
+      case 'w:numPr':
+        if(inParaProps && para) para.isList = true;
+        break;
+      case 'w:r':
+        run = { b: false, i: false, u: false };
+        break;
+      case 'w:rPr': inRunProps = true; break;
+      case 'w:b':
+      case 'w:i':
+      case 'w:u': {
+        if(!inRunProps) break;
+        const val = docxAttr(attrs, 'w:val');
+        const on = !(val === '0' || val === 'false' || val === 'none');
+        if(name === 'w:b') run.b = on;
+        else if(name === 'w:i') run.i = on;
+        else run.u = on;
+        break;
+      }
+      case 'w:t':
+        if(!selfClose){
+          inText = true;
+          if(!para) para = { style: null, isList: false, parts: [] };
+        }
+        break;
+      case 'w:br':
+        if(para) para.parts.push('<br>');
+        break;
+      case 'w:tab':
+        if(para) para.parts.push('&emsp;');
+        break;
+      case 'w:tbl':
+        closeParagraph();
+        flushList();
+        tableStack.push([]);
+        break;
+      case 'w:tr':
+        tableStack.push([]);
+        break;
+      case 'w:tc':
+        cellStack.push([]);
+        break;
+      case 'a:blip': {
+        const id = docxAttr(attrs, 'r:embed') || docxAttr(attrs, 'r:link');
+        const src = id && images[id];
+        if(src){
+          if(!para) para = { style: null, isList: false, parts: [] };
+          para.parts.push('<img src="' + src + '" style="max-width:100%;height:auto;">');
+        }
+        break;
+      }
+    }
+  }
+
+  closeParagraph();
+  flushList();
+  return out.join('\n');
+}
+
+// ---------- точка входа ----------
+
+async function docxToHtmlNative(arrayBuffer){
+  const zip = zipReadDirectory(arrayBuffer);
+  const xml = await zipReadText(zip, 'word/document.xml');
+  if(!xml) throw new Error('внутри архива нет word/document.xml');
+
+  // картинки: rId -> data:URL
+  const images = {};
+  const rels = docxParseRels(await zipReadText(zip, 'word/_rels/document.xml.rels'));
+  for(const id in rels){
+    const target = rels[id];
+    if(!/^media\//i.test(target)) continue;
+    try{
+      const bytes = await zipInflate(zip, 'word/' + target);
+      if(!bytes) continue;
+      const ext = (target.split('.').pop() || '').toLowerCase();
+      images[id] = 'data:' + (DOCX_MIME[ext] || 'application/octet-stream')
+        + ';base64,' + docxBytesToBase64(bytes);
+    }catch(e){ /* картинку пропускаем, текст важнее */ }
+  }
+
+  const html = docxConvertBody(xml, images);
+  if(!html.trim()) throw new Error('документ пуст или не распознан');
+  return html;
+}
+
+
 // Порядок важен: сначала локальная копия рядом с index.html (папка vendor/),
 // и только если её нет — CDN. Локальная копия убирает зависимость от чужого
 // сервера: подмена файла на CDN означала бы полный доступ к данным приложения.
@@ -3467,7 +3783,8 @@ const uploadDocLabel = document.getElementById('uploadDocLabel');
 const MAMMOTH_SOURCES = [
   { src: 'vendor/mammoth.browser.min.js' },
   { src: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth.js/1.4.2/mammoth.browser.min.js', integrity: '' },
-  { src: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth.js/1.6.0/mammoth.browser.min.js', integrity: '' }
+  { src: 'https://unpkg.com/mammoth@1.4.2/mammoth.browser.min.js', integrity: '' },
+  { src: 'https://cdn.jsdelivr.net/npm/mammoth@1.4.2/mammoth.browser.min.js', integrity: '' }
 ];
 let mammothLoadPromise = null;
 
@@ -3484,7 +3801,45 @@ function loadScript(src, integrity){
     s.onload = () => resolve();
     s.onerror = () => reject(new Error('failed: ' + src));
     document.head.appendChild(s);
+    // Если источник запрещён политикой CSP, событие error приходит сразу же,
+    // ещё до сетевого запроса — отличить это от блокировки провайдером можно
+    // только по консоли, поэтому пишем туда явную подсказку.
   });
+}
+
+// Сюда складываются источники, которые не открылись, — чтобы человек мог
+// прочитать причину прямо в приложении, без консоли разработчика (на телефоне
+// её всё равно нет).
+const libLoadErrors = { mammoth: [], xlsx: [] };
+
+function libFailureMessage(what, key){
+  const tried = libLoadErrors[key].length;
+  return 'Не удалось загрузить модуль для ' + what + '. Не открылся ни один из '
+    + tried + ' источников — скорее всего нет доступа к CDN (провайдер, VPN, офисная сеть). '
+    + 'Надёжное решение: положить файл в папку vendor/ рядом с index.html.';
+}
+
+// Основной путь чтения .docx: сначала встроенный разбор (работает без сети),
+// и только если он не справился — библиотека mammoth с CDN. До этого всё
+// упиралось в CDN: нет доступа — документ не загрузить вообще.
+async function convertDocxToHtml(file){
+  const arrayBuffer = await file.arrayBuffer();
+
+  try{
+    const html = await docxToHtmlNative(arrayBuffer);
+    return sanitizeHtml(html);
+  }catch(err){
+    console.warn('Встроенный чтец .docx не справился, пробуем mammoth:', err);
+  }
+
+  const ready = await ensureMammoth();
+  if(!ready){
+    const e = new Error('NO_DOCX_READER');
+    e.code = 'NO_DOCX_READER';
+    throw e;
+  }
+  const result = await window.mammoth.convertToHtml({ arrayBuffer });
+  return sanitizeHtml(result.value);
 }
 
 async function ensureMammoth(){
@@ -3492,12 +3847,17 @@ async function ensureMammoth(){
   if(mammothLoadPromise) return mammothLoadPromise;
 
   mammothLoadPromise = (async () => {
+    libLoadErrors.mammoth = [];
     for(const item of MAMMOTH_SOURCES){
       try{
         await loadScript(item.src, item.integrity);
         if(window.mammoth) return true;
-      }catch(e){ /* нет локальной копии или CDN недоступен — пробуем следующий источник */ }
+        libLoadErrors.mammoth.push(item.src + ' (загрузился, но не содержит mammoth)');
+      }catch(e){
+        libLoadErrors.mammoth.push(item.src);
+      }
     }
+    console.error('Не удалось загрузить mammoth. Источники:', libLoadErrors.mammoth);
     return false;
   })();
 
@@ -3517,22 +3877,11 @@ docFileInput.onchange = async (e) => {
     return;
   }
 
-  uploadDocLabel.textContent = 'Подготовка…';
+  uploadDocLabel.textContent = 'Загрузка…';
   uploadDocLabel.classList.add('disabled');
 
-  const ready = await ensureMammoth();
-  if(!ready){
-    uploadDocLabel.textContent = '+ Загрузить документ (.docx)';
-    uploadDocLabel.classList.remove('disabled');
-    showToast('Не удалось загрузить модуль для чтения .docx (проблема на стороне CDN). Попробуйте ещё раз через минуту или обновите страницу.');
-    return;
-  }
-
-  uploadDocLabel.textContent = 'Загрузка…';
   try{
-    const arrayBuffer = await file.arrayBuffer();
-    const result = await window.mammoth.convertToHtml({ arrayBuffer });
-    result.value = sanitizeHtml(result.value);
+    const result = { value: await convertDocxToHtml(file) };
 
     if(result.value.length > 4.5 * 1024 * 1024){
       showToast('Документ слишком большой для сохранения (лимит хранилища ~5 МБ на файл).');
@@ -3565,7 +3914,9 @@ docFileInput.onchange = async (e) => {
 };
 
 // Warm the module in the background so the first real upload is instant.
-ensureMammoth();
+// Заранее mammoth не загружаем: основной чтец .docx встроенный, а лишний
+// запрос к CDN при каждом открытии страницы только мусорит в консоли,
+// если доступа к нему нет.
 
 // ==================== xlsx (Excel) ====================
 let xlsxSheets = [];          // metadata only: {id,name,tags,linkedTaskId,createdAt,updatedAt}
@@ -3578,7 +3929,8 @@ let xlsxSaveEnabled = false;
 const XLSX_SOURCES = [
   { src: 'vendor/xlsx.full.min.js' },
   { src: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js', integrity: '' },
-  { src: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.20.1/xlsx.full.min.js', integrity: '' }
+  { src: 'https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js', integrity: '' },
+  { src: 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js', integrity: '' }
 ];
 let xlsxLibPromise = null;
 
@@ -3586,12 +3938,17 @@ async function ensureXLSXLib(){
   if(window.XLSX) return true;
   if(xlsxLibPromise) return xlsxLibPromise;
   xlsxLibPromise = (async () => {
+    libLoadErrors.xlsx = [];
     for(const item of XLSX_SOURCES){
       try{
         await loadScript(item.src, item.integrity);
         if(window.XLSX) return true;
-      }catch(e){ /* нет локальной копии или CDN недоступен — пробуем следующий источник */ }
+        libLoadErrors.xlsx.push(item.src + ' (загрузился, но не содержит XLSX)');
+      }catch(e){
+        libLoadErrors.xlsx.push(item.src);
+      }
     }
+    console.error('Не удалось загрузить XLSX. Источники:', libLoadErrors.xlsx);
     return false;
   })();
   return xlsxLibPromise;
@@ -4034,7 +4391,7 @@ xlsxFileInput.onchange = async (e) => {
   if(!ready){
     uploadXlsxLabel.textContent = '+ Загрузить (.xlsx)';
     uploadXlsxLabel.classList.remove('disabled');
-    showToast('Не удалось загрузить модуль для чтения .xlsx. Попробуйте ещё раз через минуту.');
+    showToast(libFailureMessage('чтения .xlsx', 'xlsx'), 'error');
     return;
   }
 
@@ -4099,7 +4456,7 @@ document.getElementById('importTasksXlsxFile').onchange = async (e) => {
 
   const ready = await ensureXLSXLib();
   if(!ready){
-    showToast('Не удалось загрузить модуль для чтения .xlsx. Попробуйте ещё раз через минуту.');
+    showToast(libFailureMessage('чтения .xlsx', 'xlsx'), 'error');
     return;
   }
 
@@ -4959,11 +5316,7 @@ async function uploadScanFile(moduleId, file){
   try{
     let content;
     if(type === 'docx'){
-      const ready = await ensureMammoth();
-      if(!ready){ showToast('Не удалось загрузить модуль для чтения .docx.'); return; }
-      const arrayBuffer = await file.arrayBuffer();
-      const result = await window.mammoth.convertToHtml({ arrayBuffer });
-      content = sanitizeHtml(result.value);
+      content = await convertDocxToHtml(file);
     } else {
       content = await readFileAsDataURL(file);
     }
@@ -4991,7 +5344,12 @@ async function uploadScanFile(moduleId, file){
     openScanEditor(moduleId, id);
     showToast('Файл загружен и сохранён ✓', 'info');
   }catch(err){
-    showToast('Не удалось прочитать файл.');
+    if(err && err.code === 'NO_DOCX_READER'){
+      showToast('Файл не удалось разобрать встроенным способом, а запасная библиотека недоступна (нет доступа к CDN). Попробуйте пересохранить документ в Word как .docx.', 'error');
+    } else {
+      showToast('Не удалось прочитать файл.');
+    }
+    console.error('Загрузка файла не удалась:', err);
   }finally{
     label.textContent = '+ Загрузить (.docx, фото, PDF)';
   }
