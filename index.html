@@ -1037,7 +1037,7 @@
       </div>
       <div class="clock-block">
         <div class="clock mono" id="clock">--:--:--</div>
-        <div class="clock-label">местное время · <span class="mono" id="buildStamp" style="cursor:pointer;text-decoration:underline dotted;" title="Нажмите — покажет состояние хранилища">сборка 9</span></div>
+        <div class="clock-label">местное время · <span class="mono" id="buildStamp" style="cursor:pointer;text-decoration:underline dotted;" title="Нажмите — покажет состояние хранилища">сборка 10</span></div>
       </div>
     </div>
   </header>
@@ -2829,7 +2829,7 @@ document.getElementById('resetBtn').onclick = () => {
 
 // Номер сборки видно в шапке приложения — по нему сразу понятно, открылась
 // новая версия страницы или браузер отдал старую из кеша.
-const BUILD = 'сборка 9 (27.07.2026)';
+const BUILD = 'сборка 10 (27.07.2026)';
 console.log('Neiro-Max Control —', BUILD);
 
 // Нажатие на номер сборки показывает состояние: сколько занято в хранилище
@@ -2838,7 +2838,7 @@ console.log('Neiro-Max Control —', BUILD);
 document.addEventListener('DOMContentLoaded', () => {
   const stamp = document.getElementById('buildStamp');
   if(!stamp) return;
-  stamp.onclick = () => {
+  stamp.onclick = async () => {
     let chars = 0, count = 0;
     try{
       for(let i = 0; i < localStorage.length; i++){
@@ -2852,17 +2852,174 @@ document.addEventListener('DOMContentLoaded', () => {
     const kb = Math.round(chars * 2 / 1024);
     const pct = Math.round(kb / 5120 * 100);
     const unzip = (typeof DecompressionStream !== 'undefined') ? 'есть' : 'НЕТ';
-    const lib = window.mammoth ? 'загружена' : 'не нужна';
+
+    let files = '—', room = '';
+    try{
+      const keys = await blobDB.keys();
+      files = keys.length;
+      if(navigator.storage && navigator.storage.estimate){
+        const est = await navigator.storage.estimate();
+        room = ', занято ' + Math.round((est.usage||0)/1048576) + ' МБ из '
+             + Math.round((est.quota||0)/1048576) + ' МБ';
+      }
+    }catch(e){ files = 'недоступно'; }
 
     showToast(
       BUILD + '\n' +
-      'Хранилище: ' + kb + ' КБ из ~5120 КБ (' + pct + '%), записей: ' + count + '\n' +
-      'Распаковка .docx в браузере: ' + unzip + '\n' +
-      'Внешняя библиотека: ' + lib,
+      'Мелкие данные: ' + kb + ' КБ из ~5120 КБ (' + pct + '%), записей: ' + count + '\n' +
+      'Файлы в большом хранилище: ' + files + room + '\n' +
+      'Распаковка .docx: ' + unzip,
       'info'
     );
   };
 });
+
+
+// ============================================================================
+// Большое хранилище для содержимого файлов.
+//
+// localStorage даёт около 5 МБ на весь сайт, а фотографии и PDF хранятся в нём
+// текстом (base64), где каждый символ занимает 2 байта. Несколько снимков с
+// телефона забивают лимит целиком, и следующий файл уже не сохраняется.
+// IndexedDB такого ограничения не имеет — браузер выделяет ему долю свободного
+// места на устройстве, обычно сотни мегабайт и больше.
+//
+// Подменяем window.storage: ключи с содержимым файлов уходят в IndexedDB,
+// а мелочь (списки, задачи, настройки) остаётся в localStorage, как была.
+// Старые записи переносятся сами при первом обращении и при запуске.
+// ============================================================================
+
+const BIG_KEY_RE = /^(doc:|xlsx:|scan_[a-zA-Z0-9_]+:)/;
+
+const blobDB = (function(){
+  const DB_NAME = 'neiro-max-control';
+  const STORE = 'blobs';
+  let dbPromise = null;
+
+  function open(){
+    if(dbPromise) return dbPromise;
+    dbPromise = new Promise((resolve, reject) => {
+      if(!window.indexedDB){ reject(new Error('IndexedDB недоступен')); return; }
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('не удалось открыть IndexedDB'));
+      req.onblocked = () => reject(new Error('IndexedDB заблокирован другой вкладкой'));
+    });
+    return dbPromise;
+  }
+
+  function run(mode, fn){
+    return open().then(db => new Promise((resolve, reject) => {
+      let request;
+      const t = db.transaction(STORE, mode);
+      try{ request = fn(t.objectStore(STORE)); }
+      catch(e){ reject(e); return; }
+      t.oncomplete = () => resolve(request ? request.result : undefined);
+      t.onerror = () => reject(t.error || new Error('ошибка транзакции'));
+      t.onabort = () => reject(t.error || new Error('транзакция прервана'));
+    }));
+  }
+
+  return {
+    get:    (k)    => run('readonly',  st => st.get(k)),
+    set:    (k, v) => run('readwrite', st => st.put(v, k)),
+    delete: (k)    => run('readwrite', st => st.delete(k)),
+    keys:   ()     => run('readonly',  st => st.getAllKeys())
+  };
+})();
+
+let bigStoreOk = true;
+
+(function installBigStorage(){
+  const base = window.storage;
+  if(!base) return;
+
+  const isBig = (key) => BIG_KEY_RE.test(key);
+
+  // Перенос старой записи в IndexedDB и удаление из localStorage — фоном,
+  // чтобы не задерживать открытие файла.
+  const migrate = (key, value, shared) => {
+    if(value === null || value === undefined) return;
+    blobDB.set(key, value)
+      .then(() => base.delete(key, shared).catch(() => {}))
+      .catch(() => {});
+  };
+
+  window.storage = {
+    async get(key, shared){
+      if(isBig(key) && bigStoreOk){
+        let stored;
+        try{
+          stored = await blobDB.get(key);
+        }catch(e){
+          bigStoreOk = false;
+          console.warn('IndexedDB недоступен, остаёмся на localStorage:', e);
+        }
+        if(bigStoreOk){
+          if(stored !== undefined) return { key, value: stored, shared: !!shared };
+          const res = await base.get(key, shared);   // может бросить «ключа нет» — это нормально
+          migrate(key, res && res.value, shared);
+          return res;
+        }
+      }
+      return base.get(key, shared);
+    },
+
+    async set(key, value, shared){
+      if(isBig(key) && bigStoreOk){
+        try{
+          await blobDB.set(key, value);
+          base.delete(key, shared).catch(() => {});  // подчищаем прежнюю копию
+          return { key, value, shared: !!shared };
+        }catch(e){
+          bigStoreOk = false;
+          console.warn('Не удалось записать в IndexedDB, откатываемся на localStorage:', e);
+        }
+      }
+      return base.set(key, value, shared);
+    },
+
+    async delete(key, shared){
+      if(isBig(key)){
+        try{ await blobDB.delete(key); }catch(e){ /* могло и не быть */ }
+      }
+      return base.delete(key, shared);
+    },
+
+    list(prefix, shared){ return base.list(prefix, shared); }
+  };
+})();
+
+// При запуске переносим всё, что уже лежит в localStorage, — это сразу
+// освобождает место, из-за нехватки которого файлы переставали сохраняться.
+async function migrateBigKeysOnStartup(){
+  if(!bigStoreOk) return;
+  try{
+    const res = await window.storage.list('', false);
+    const keys = (res && res.keys) ? res.keys.filter(k => BIG_KEY_RE.test(k)) : [];
+    if(!keys.length) return;
+
+    let moved = 0;
+    for(const key of keys){
+      try{
+        const existing = await blobDB.get(key);
+        if(existing !== undefined) continue;
+        const raw = localStorage.getItem('task-control::' + key);
+        if(raw === null) continue;
+        await blobDB.set(key, raw);
+        localStorage.removeItem('task-control::' + key);
+        moved++;
+      }catch(e){ /* один файл не перенёсся — не повод останавливать остальные */ }
+    }
+    if(moved) console.log('Перенесено в IndexedDB файлов:', moved);
+  }catch(e){
+    console.warn('Перенос в IndexedDB не выполнен:', e);
+  }
+}
 
 // ---------- pomodoro timer ----------
 const POMODORO_SECONDS = 25 * 60;
@@ -3993,6 +4150,8 @@ docFileInput.onchange = async (e) => {
 };
 
 // Warm the module in the background so the first real upload is instant.
+migrateBigKeysOnStartup();
+
 // Заранее mammoth не загружаем: основной чтец .docx встроенный, а лишний
 // запрос к CDN при каждом открытии страницы только мусорит в консоли,
 // если доступа к нему нет.
@@ -5412,7 +5571,7 @@ async function uploadScanFile(moduleId, file){
     mod.contentCache[id] = content;
     const savedContent = await saveScanContent(moduleId, id, content);
     if(!savedContent){
-      showToast('Не удалось сохранить файл в хранилище. Попробуйте ещё раз через минуту.');
+      showToast('Не удалось сохранить файл. Если это повторяется — нажмите «сборка» в шапке и посмотрите, сколько занято места.', 'error');
       delete mod.contentCache[id];
       return;
     }
