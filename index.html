@@ -1664,6 +1664,34 @@ function normalizePersonnel(raw){
   };
 }
 
+// Разбор JSON из хранилища. Раньше повреждённая запись бросала исключение
+// прямо в loadTasks/loadDocs/..., и остаток загрузки (render, checkReminders,
+// loadDocs, loadXlsx) не выполнялся вовсе — экран оставался пустым без
+// объяснений. Теперь битые данные заменяются пустым значением, а человек
+// получает сообщение и может восстановиться из резервной копии.
+function safeParse(raw, fallback, what){
+  if(raw === null || raw === undefined || raw === '') return fallback;
+  try{
+    const parsed = JSON.parse(raw);
+    return (parsed === null || parsed === undefined) ? fallback : parsed;
+  }catch(e){
+    console.error('Повреждённые данные в хранилище' + (what ? ' (' + what + ')' : '') + ':', e);
+    showToast('Часть сохранённых данных повреждена' + (what ? ': ' + what : '') +
+              '. Остальное загружено. Восстановите из резервной копии.');
+    return fallback;
+  }
+}
+
+// Хранилище было недоступно, человек тем временем что-то добавил, связь
+// восстановилась. Берём то, что лежит в хранилище, и дописываем к нему всё
+// добавленное вслепую — чтобы не потерять ни старое, ни новое.
+function mergeRecovered(stored, pending){
+  const list = Array.isArray(stored) ? stored : [];
+  if(!Array.isArray(pending) || !pending.length) return list;
+  const ids = new Set(list.map(x => x && x.id));
+  return list.concat(pending.filter(x => x && !ids.has(x.id)));
+}
+
 let saveEnabled = false;
 let lastSavedValue = null;
 
@@ -1742,7 +1770,7 @@ async function loadTasks(){
     return;
   }
 
-  tasks = normalizeTaskList(res.value ? JSON.parse(res.value) : []);
+  tasks = normalizeTaskList(safeParse(res.value, [], 'задачи'));
   saveEnabled = true;
   lastSavedValue = JSON.stringify(tasks);
   render();
@@ -1767,7 +1795,7 @@ async function restoreBackup(){
   try{
     const res = await window.storage.get(STORAGE_KEY + '-backup', false);
     if(!res || !res.value){ showToast('Резервная копия не найдена.'); return; }
-    const backupTasks = normalizeTaskList(JSON.parse(res.value));
+    const backupTasks = normalizeTaskList(safeParse(res.value, [], 'резервная копия задач'));
     showConfirmModal(`Восстановить ${backupTasks.length} задач(и) из резервной копии? Текущий список будет заменён.`, async () => {
       tasks = backupTasks;
       await saveTasks();
@@ -1778,32 +1806,141 @@ async function restoreBackup(){
   }
 }
 
-function exportTasks(e){
-  const link = e.currentTarget;
-  const blob = new Blob([JSON.stringify(tasks, null, 2)], { type: 'application/json' });
+// ---------- полная резервная копия ----------
+// Раньше эта кнопка выгружала только задачи, а документы, таблицы, заметки,
+// сканы и договоры не выгружались вообще — очистка данных браузера уносила их
+// безвозвратно. Теперь в файл попадает всё; формат распознаётся при
+// восстановлении, поэтому старые копии (просто массив задач) тоже читаются.
+const BACKUP_FORMAT = 'neiro-max-backup';
+const BACKUP_SIMPLE_KEYS = [
+  'tasks-v1', 'personnel-data', 'notes-contacts', 'ui-theme', 'notify-lead-minutes',
+  'doc-index', 'xlsx-index',
+  'scan_trauma-index', 'scan_neuro-index', 'scan_contracts-index'
+];
+
+function downloadBlob(filename, blob){
   const url = URL.createObjectURL(blob);
-  const stamp = new Date().toISOString().slice(0,10);
-  link.href = url;
-  link.download = `task-control-backup-${stamp}.json`;
-  // Let the browser's own click handling perform the download since href/download
-  // are now set — no preventDefault, no synthetic .click() on a detached element.
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
-  markBackupDone();
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 10000);
+}
+
+async function collectFullBackup(){
+  const data = {};
+  const put = async (key) => {
+    try{
+      const r = await window.storage.get(key, false);
+      if(r && r.value !== null && r.value !== undefined) data[key] = r.value;
+    }catch(e){ /* ключа нет — просто пропускаем */ }
+  };
+
+  for(const key of BACKUP_SIMPLE_KEYS) await put(key);
+
+  // содержимое файлов лежит отдельными ключами — собираем по индексам
+  for(const d of documents) await put('doc:' + d.id);
+  for(const d of xlsxSheets) await put('xlsx:' + d.id);
+  for(const moduleId of ['scan_trauma','scan_neuro','scan_contracts']){
+    for(const d of scanModules[moduleId].items) await put(moduleId + ':' + d.id);
+  }
+
+  let panelNames = null;
+  try{ panelNames = localStorage.getItem(PANEL_NAMES_LS); }catch(e){}
+
+  return {
+    format: BACKUP_FORMAT,
+    version: 1,
+    build: BUILD,
+    exportedAt: new Date().toISOString(),
+    panelNames: panelNames,
+    data: data
+  };
+}
+
+async function exportTasks(e){
+  const link = e.currentTarget;
+  e.preventDefault();
+  const original = link.textContent;
+  link.textContent = 'Готовлю копию…';
+  try{
+    const bundle = await collectFullBackup();
+    const stamp = new Date().toISOString().slice(0,10);
+    downloadBlob(
+      `neiro-max-backup-${stamp}.json`,
+      new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' })
+    );
+    markBackupDone();
+    const files = Object.keys(bundle.data).length;
+    showToast('Резервная копия сохранена ✓ (записей: ' + files + ')', 'info');
+  }catch(err){
+    console.error('Резервная копия не собралась:', err);
+    showToast('Не удалось собрать резервную копию. Попробуйте ещё раз.');
+  }finally{
+    link.textContent = original;
+  }
+}
+
+async function applyFullBackup(bundle){
+  const data = bundle.data || {};
+  const keys = Object.keys(data);
+  let written = 0;
+  for(const key of keys){
+    try{
+      await window.storage.set(key, data[key], false);
+      written++;
+    }catch(e){ console.error('Не записался ключ', key, e); }
+  }
+  if(bundle.panelNames){
+    try{ localStorage.setItem(PANEL_NAMES_LS, bundle.panelNames); }catch(e){}
+  }
+  return written;
 }
 
 function importTasksFromFile(file){
   const reader = new FileReader();
   reader.onload = () => {
+    let raw;
     try{
-      const imported = normalizeTaskList(JSON.parse(reader.result));
-      if(!imported.length) throw new Error('bad format');
-      showConfirmModal(`Импортировать ${imported.length} задач(и)? Текущий список будет заменён.`, () => {
-        tasks = imported;
-        saveTasks(); render();
-      });
+      raw = JSON.parse(reader.result);
     }catch(e){
       showToast('Не удалось прочитать файл — убедитесь, что это резервная копия Neiro-Max Control.');
+      return;
     }
+
+    // Новый формат: копия всего приложения
+    if(raw && raw.format === BACKUP_FORMAT && raw.data){
+      const count = Object.keys(raw.data).length;
+      const when = raw.exportedAt ? new Date(raw.exportedAt).toLocaleString('ru-RU') : 'неизвестно когда';
+      showConfirmModal(
+        `Восстановить полную копию от ${when} (записей: ${count})? Текущие задачи, документы, таблицы, заметки, сканы и реестр ОТЕЛЯ будут заменены. Страница перезагрузится.`,
+        async () => {
+          const written = await applyFullBackup(raw);
+          showToast('Восстановлено записей: ' + written + '. Перезагружаю…', 'info');
+          setTimeout(() => location.reload(), 1200);
+        }
+      );
+      return;
+    }
+
+    // Старый формат: просто массив задач
+    if(Array.isArray(raw)){
+      const imported = normalizeTaskList(raw);
+      if(!imported.length){
+        showToast('В файле нет задач — восстанавливать нечего.');
+        return;
+      }
+      showConfirmModal(`Импортировать ${imported.length} задач(и)? Текущий список задач будет заменён.`, () => {
+        tasks = imported;
+        saveTasks(); render();
+        showToast('Задачи восстановлены ✓', 'info');
+      });
+      return;
+    }
+
+    showToast('Не удалось прочитать файл — убедитесь, что это резервная копия Neiro-Max Control.');
   };
   reader.readAsText(file);
 }
@@ -1863,7 +2000,11 @@ function groupTasks(){
 
 // ---------- rendering ----------
 function renderStats(g){
-  const total = tasks.length;
+  // Считаем из одного набора. Раньше total брался по всем задачам, а doneCount —
+  // только по прошедшим фильтр: при включённой метке процент не сходился с тем,
+  // что видно на экране.
+  const total = g.overdue.length + g.dueToday.length + g.upcoming.length
+              + g.noDeadline.length + g.completed.length;
   const doneCount = g.completed.length;
   const rate = total ? Math.round((doneCount/total)*100) : 0;
   document.getElementById('stats').innerHTML = `
@@ -2634,19 +2775,30 @@ function attachTaskEvents(){
 }
 
 // ---------- actions ----------
+// Шаг прибавляется к старому сроку столько раз, сколько нужно, чтобы попасть в
+// будущее. Раньше прибавлялся ровно один: ежедневная задача, просроченная на
+// месяц, порождала копию, просроченную на 29 дней, — и так тридцать раз подряд.
 function nextDeadline(deadline, recurrence){
+  const step = recurrence === 'weekly' ? 7 : 1;
   const d = new Date(deadline);
-  if(recurrence === 'daily') d.setDate(d.getDate()+1);
-  else if(recurrence === 'weekly') d.setDate(d.getDate()+7);
+  if(isNaN(d.getTime())) return null;
+  const now = new Date();
+  let guard = 0;
+  do{
+    d.setDate(d.getDate() + step);
+    guard++;
+  } while(d <= now && guard < 4000);   // предохранитель от бесконечного цикла
   return d.toISOString();
 }
 
 function spawnRecurrence(t){
   if(t.recurrence && t.recurrence !== 'none' && t.deadline){
+    const next = nextDeadline(t.deadline, t.recurrence);
+    if(!next) return;
     tasks.push({
       id: uid(),
       title: t.title,
-      deadline: nextDeadline(t.deadline, t.recurrence),
+      deadline: next,
       priority: t.priority,
       recurrence: t.recurrence,
       tags: [...(t.tags||[])],
@@ -2932,7 +3084,28 @@ const blobDB = (function(){
   };
 })();
 
+// Раньше один-единственный сбой IndexedDB (например, транзакция заблокирована
+// другой вкладкой) навсегда переводил приложение на localStorage с его лимитом
+// ~5 МБ, и файлы тихо переставали сохраняться до перезагрузки страницы.
+// Теперь отключение временное: через минуту снова пробуем.
 let bigStoreOk = true;
+const BIG_STORE_COOLDOWN_MS = 60 * 1000;
+let bigStoreRetryAt = 0;
+
+function bigStoreAvailable(){
+  if(bigStoreOk) return true;
+  if(Date.now() >= bigStoreRetryAt){
+    bigStoreOk = true;          // даём ещё один шанс
+    return true;
+  }
+  return false;
+}
+
+function bigStoreFailed(e){
+  bigStoreOk = false;
+  bigStoreRetryAt = Date.now() + BIG_STORE_COOLDOWN_MS;
+  console.warn('IndexedDB временно недоступен, работаем через localStorage:', e);
+}
 
 (function installBigStorage(){
   const base = window.storage;
@@ -2951,13 +3124,12 @@ let bigStoreOk = true;
 
   window.storage = {
     async get(key, shared){
-      if(isBig(key) && bigStoreOk){
+      if(isBig(key) && bigStoreAvailable()){
         let stored;
         try{
           stored = await blobDB.get(key);
         }catch(e){
-          bigStoreOk = false;
-          console.warn('IndexedDB недоступен, остаёмся на localStorage:', e);
+          bigStoreFailed(e);
         }
         if(bigStoreOk){
           if(stored !== undefined) return { key, value: stored, shared: !!shared };
@@ -2970,14 +3142,13 @@ let bigStoreOk = true;
     },
 
     async set(key, value, shared){
-      if(isBig(key) && bigStoreOk){
+      if(isBig(key) && bigStoreAvailable()){
         try{
           await blobDB.set(key, value);
           base.delete(key, shared).catch(() => {});  // подчищаем прежнюю копию
           return { key, value, shared: !!shared };
         }catch(e){
-          bigStoreOk = false;
-          console.warn('Не удалось записать в IndexedDB, откатываемся на localStorage:', e);
+          bigStoreFailed(e);
         }
       }
       return base.set(key, value, shared);
@@ -3283,11 +3454,14 @@ let currentDocId = null;
 let activeDocTags = new Set();
 let autosaveTimer = null;
 let docsSaveEnabled = false;
+let docsLoaded = false;   // как personnelLoaded: пока не прочитали по-настоящему — не пишем
+let docPageReady = false; // содержимое открытого документа реально отрисовано в редакторе
 
 async function loadDocs(){
   const res = await loadKeyWithRetry('doc-index');
   if(res.ok){
-    documents = res.value ? JSON.parse(res.value) : [];
+    documents = safeParse(res.value, [], 'список документов');
+    docsLoaded = true;
   }
   docsSaveEnabled = res.ok; // documents have their own independent save gate
   renderDocSaveWarning();
@@ -3309,6 +3483,7 @@ function renderDocSaveWarning(){
 
 async function persistDocIndex(){
   if(!docsSaveEnabled && !(await tryReEnableDocsSave())) return false;
+  if(!docsLoaded) return false;   // ни разу не читали — писать нечего и опасно
   try{
     await window.storage.set('doc-index', JSON.stringify(documents), false);
     return true;
@@ -3316,6 +3491,7 @@ async function persistDocIndex(){
 }
 
 async function saveDocContent(id, html){
+  if(typeof html !== 'string') return false;  // никогда не пишем undefined поверх документа
   if(!docsSaveEnabled && !(await tryReEnableDocsSave())) return false;
   try{
     await window.storage.set('doc:' + id, html, false);
@@ -3328,6 +3504,15 @@ async function tryReEnableDocsSave(){
   // the session without at least trying to reconnect.
   const res = await loadKeyWithRetry('doc-index');
   if(res.ok){
+    // Раньше здесь брался только флаг, а прочитанный список выбрасывался:
+    // следующая же запись клала пустой documents поверх настоящего индекса.
+    // Если мы так и не загрузились ни разу — принимаем то, что лежит в
+    // хранилище, вместо того чтобы затирать его пустотой.
+    if(!docsLoaded){
+      documents = mergeRecovered(safeParse(res.value, [], 'список документов'), documents);
+      docsLoaded = true;
+      renderDocSideList();
+    }
     docsSaveEnabled = true;
     renderDocSaveWarning();
     return true;
@@ -3449,6 +3634,7 @@ function quickPrintXlsx(id, e){
 
 function closeDocEditor(){
   currentDocId = null;
+  docPageReady = false;
   activeEditor = null;
   render();
 }
@@ -3510,6 +3696,17 @@ function renderDocSideList(){
 async function openDocEditor(id){
   const meta = documents.find(d=>d.id===id);
   if(!meta) return;
+
+  // Автосохранение работает с задержкой 1,2 с. Если переключиться на другой
+  // документ быстрее, отложенный таймер срабатывал уже после смены
+  // currentDocId и записывал содержимое страницы (а там в этот момент
+  // заглушка «Загрузка…») в НОВЫЙ документ, уничтожая его. Гасим таймер и
+  // дописываем прежний документ до конца, прежде чем переключаться.
+  clearTimeout(autosaveTimer);
+  if(currentDocId && currentDocId !== id){
+    await commitDocChanges();
+  }
+
   currentDocId = id;
   activeEditor = 'doc';
   render();
@@ -3525,6 +3722,7 @@ async function openDocEditor(id){
     tasks.filter(t=>!t.done).map(t => `<option value="${t.id}" ${t.id===meta.linkedTaskId?'selected':''}>${escapeHtml(t.title)}</option>`).join('');
 
   const page = document.getElementById('docPage');
+  docPageReady = false;   // пока не загрузились — сохранять нечего
   page.innerHTML = '<p style="color:#999;">Загрузка…</p>';
   const html = await fetchDocContent(id);
   if(currentDocId === id){ // guard against a fast doc switch mid-load
@@ -3532,6 +3730,7 @@ async function openDocEditor(id){
       page.innerHTML = '<p style="color:#c0392b;">Не удалось загрузить документ. Обновите страницу и попробуйте снова.</p>';
     } else {
       page.innerHTML = sanitizeHtml(html) || '<p></p>';
+      docPageReady = true;
     }
   }
 }
@@ -3557,6 +3756,7 @@ function scheduleAutosave(){
 
 async function commitDocChanges(){
   if(!currentDocId) return false;
+  if(!docPageReady) return false;   // документ ещё грузится: в странице заглушка, а не текст
   const meta = documents.find(d=>d.id===currentDocId);
   if(!meta) return false;
   meta.name = document.getElementById('docTitleInput').value.trim() || 'Без названия';
@@ -3731,9 +3931,17 @@ function zipReadDirectory(arrayBuffer){
   return { bytes, view, entries };
 }
 
+// Потолок на распакованный размер одного элемента архива. .docx на 4 МБ может
+// разжаться в гигабайты и уронить вкладку — uncompSize из каталога читался, но
+// не проверялся.
+const ZIP_MAX_INFLATED = 64 * 1024 * 1024;
+
 async function zipInflate(zip, name){
   const e = zip.entries.get(name);
   if(!e) return null;
+  if(e.uncompSize > ZIP_MAX_INFLATED){
+    throw new Error('элемент архива слишком велик в распакованном виде: ' + name);
+  }
 
   // Размеры в локальном заголовке могут быть нулевыми (при потоковой записи),
   // поэтому берём их из центрального каталога, а из локального — только длины
@@ -4163,6 +4371,7 @@ let currentXlsxId = null;
 let activeXlsxTags = new Set();
 let xlsxAutosaveTimer = null;
 let xlsxSaveEnabled = false;
+let xlsxLoaded = false;   // индекс таблиц реально прочитан из хранилища
 
 const XLSX_SOURCES = [
   { src: 'vendor/xlsx.full.min.js' },
@@ -4219,7 +4428,8 @@ function normalizeGrid(grid){
 async function loadXlsx(){
   const res = await loadKeyWithRetry('xlsx-index');
   if(res.ok){
-    xlsxSheets = res.value ? JSON.parse(res.value) : [];
+    xlsxSheets = safeParse(res.value, [], 'список таблиц');
+    xlsxLoaded = true;
   }
   xlsxSaveEnabled = res.ok;
   renderXlsxSaveWarning();
@@ -4241,6 +4451,13 @@ function renderXlsxSaveWarning(){
 async function tryReEnableXlsxSave(){
   const res = await loadKeyWithRetry('xlsx-index');
   if(res.ok){
+    // см. комментарий в tryReEnableDocsSave: прочитанное нельзя выбрасывать,
+    // иначе следующая запись затрёт настоящий индекс пустым массивом
+    if(!xlsxLoaded){
+      xlsxSheets = mergeRecovered(safeParse(res.value, [], 'список таблиц'), xlsxSheets);
+      xlsxLoaded = true;
+      renderXlsxSideList();
+    }
     xlsxSaveEnabled = true;
     renderXlsxSaveWarning();
     return true;
@@ -4251,6 +4468,7 @@ async function tryReEnableXlsxSave(){
 
 async function persistXlsxIndex(){
   if(!xlsxSaveEnabled && !(await tryReEnableXlsxSave())) return false;
+  if(!xlsxLoaded) return false;
   try{
     await window.storage.set('xlsx-index', JSON.stringify(xlsxSheets), false);
     return true;
@@ -4258,6 +4476,10 @@ async function persistXlsxIndex(){
 }
 
 async function saveXlsxContent(id, grid){
+  // Без этой проверки при быстром переключении таблиц сюда прилетал undefined,
+  // JSON.stringify давал undefined, в хранилище попадала строка "undefined",
+  // и таблица переставала открываться навсегда.
+  if(!Array.isArray(grid)) return false;
   if(!xlsxSaveEnabled && !(await tryReEnableXlsxSave())) return false;
   try{
     await window.storage.set('xlsx:' + id, JSON.stringify(grid), false);
@@ -4272,7 +4494,8 @@ async function fetchXlsxContent(id){
     showToast('Не удалось загрузить содержимое этой таблицы — проблема с хранилищем. Обновите страницу и попробуйте снова, прежде чем редактировать (иначе можно случайно сохранить пустую версию поверх настоящих данных).');
     return null;
   }
-  const grid = res.value ? JSON.parse(res.value) : blankGrid(10, 6);
+  const parsed = safeParse(res.value, null, 'содержимое таблицы');
+  const grid = Array.isArray(parsed) && parsed.length ? parsed : blankGrid(10, 6);
   xlsxContentCache[id] = grid;
   return grid;
 }
@@ -4421,6 +4644,14 @@ function renderXlsxTable(grid){
 async function openXlsxEditor(id){
   const meta = xlsxSheets.find(d=>d.id===id);
   if(!meta) return;
+
+  // То же, что и в openDocEditor: отложенное автосохранение прежней таблицы
+  // не должно сработать уже после смены currentXlsxId.
+  clearTimeout(xlsxAutosaveTimer);
+  if(currentXlsxId && currentXlsxId !== id){
+    await commitXlsxChanges();
+  }
+
   currentXlsxId = id;
   activeEditor = 'xlsx';
   render();
@@ -4467,6 +4698,8 @@ function scheduleXlsxAutosave(){
 
 async function commitXlsxChanges(){
   if(!currentXlsxId) return false;
+  // содержимое ещё не загружено — сохранять нечего (иначе затрём настоящие данные)
+  if(!Array.isArray(xlsxContentCache[currentXlsxId])) return false;
   const meta = xlsxSheets.find(d=>d.id===currentXlsxId);
   if(!meta) return false;
   meta.name = document.getElementById('xlsxTitleInput').value.trim() || 'Без названия';
@@ -4751,11 +4984,13 @@ ensureXLSXLib();
 // ==================== notes / contacts ====================
 let notesContacts = [];
 let notesSaveEnabled = false;
+let notesLoaded = false;
 
 async function loadNotes(){
   const res = await loadKeyWithRetry('notes-contacts');
   if(res.ok){
-    notesContacts = res.value ? JSON.parse(res.value) : [];
+    notesContacts = safeParse(res.value, [], 'заметки');
+    notesLoaded = true;
   }
   notesSaveEnabled = res.ok;
   renderNoteWarning();
@@ -4772,6 +5007,13 @@ function renderNoteWarning(){
 
 async function tryReEnableNotesSave(){
   const res = await loadKeyWithRetry('notes-contacts');
+  if(res.ok && !notesLoaded){
+    // не выбрасываем прочитанное — иначе затрём заметки пустым списком;
+    // и не теряем то, что человек успел добавить, пока хранилище было недоступно
+    notesContacts = mergeRecovered(safeParse(res.value, [], 'заметки'), notesContacts);
+    notesLoaded = true;
+    renderNoteList();
+  }
   notesSaveEnabled = res.ok;
   renderNoteWarning();
   return res.ok;
@@ -4779,6 +5021,7 @@ async function tryReEnableNotesSave(){
 
 async function persistNotes(){
   if(!notesSaveEnabled && !(await tryReEnableNotesSave())) return false;
+  if(!notesLoaded) return false;
   try{
     await window.storage.set('notes-contacts', JSON.stringify(notesContacts), false);
     return true;
@@ -5016,7 +5259,7 @@ let personnelLoaded = false;
 async function loadPersonnel(){
   const res = await loadKeyWithRetry('personnel-data');
   if(res.ok){
-    personnelData = normalizePersonnel(res.value ? JSON.parse(res.value) : null);
+    personnelData = normalizePersonnel(safeParse(res.value, null, 'реестр ОТЕЛЯ'));
     personnelLoaded = true; // only trust in-memory data as accurate once a real fetch succeeded
   }
   personnelSaveEnabled = res.ok;
@@ -5034,6 +5277,16 @@ function renderPersonnelWarning(){
 
 async function tryReEnablePersonnelSave(){
   const res = await loadKeyWithRetry('personnel-data');
+  if(res.ok && !personnelLoaded){
+    // persistPersonnel и так не пишет до первой удачной загрузки, но раз связь
+    // восстановилась — сразу подтянем настоящие записи, а не будем ждать F5
+    const stored = normalizePersonnel(safeParse(res.value, null, 'реестр ОТЕЛЯ'));
+    stored.people = mergeRecovered(stored.people, personnelData.people);
+    personnelData = stored;
+    personnelLoaded = true;
+    if(activeEditor === 'hotel') renderHotelTable();
+    updateHotelCount();
+  }
   personnelSaveEnabled = res.ok;
   renderPersonnelWarning();
   return res.ok;
@@ -5371,9 +5624,9 @@ fetch('https://countapi.mileshilliard.com/api/v1/hit/neiro-max-control-app-2026-
 // ==================== scan documents (Травматология / Неврология) ====================
 const SCAN_MODULE_NAMES = { scan_trauma: 'Сканы', scan_neuro: 'Разное', scan_contracts: 'Договоры' };
 let scanModules = {
-  scan_trauma: { items: [], saveEnabled: false, contentCache: {} },
-  scan_neuro: { items: [], saveEnabled: false, contentCache: {} },
-  scan_contracts: { items: [], saveEnabled: false, contentCache: {} }
+  scan_trauma: { items: [], saveEnabled: false, loaded: false, contentCache: {} },
+  scan_neuro: { items: [], saveEnabled: false, loaded: false, contentCache: {} },
+  scan_contracts: { items: [], saveEnabled: false, loaded: false, contentCache: {} }
 };
 let currentScanModule = null;
 let currentScanId = null;
@@ -5382,7 +5635,8 @@ async function loadScanModule(moduleId){
   const res = await loadKeyWithRetry(moduleId + '-index');
   const mod = scanModules[moduleId];
   if(res.ok){
-    mod.items = res.value ? JSON.parse(res.value) : [];
+    mod.items = safeParse(res.value, [], SCAN_MODULE_NAMES[moduleId] || moduleId);
+    mod.loaded = true;
   }
   mod.saveEnabled = res.ok;
   renderScanWarning(moduleId);
@@ -5400,7 +5654,14 @@ function renderScanWarning(moduleId){
 
 async function tryReEnableScanSave(moduleId){
   const res = await loadKeyWithRetry(moduleId + '-index');
-  scanModules[moduleId].saveEnabled = res.ok;
+  const mod = scanModules[moduleId];
+  if(res.ok && !mod.loaded){
+    // как и в остальных модулях: прочитанное нельзя выбрасывать
+    mod.items = mergeRecovered(safeParse(res.value, [], SCAN_MODULE_NAMES[moduleId] || moduleId), mod.items);
+    mod.loaded = true;
+    renderScanSideList(moduleId);
+  }
+  mod.saveEnabled = res.ok;
   renderScanWarning(moduleId);
   return res.ok;
 }
@@ -5408,6 +5669,7 @@ async function tryReEnableScanSave(moduleId){
 async function persistScanIndex(moduleId){
   const mod = scanModules[moduleId];
   if(!mod.saveEnabled && !(await tryReEnableScanSave(moduleId))) return false;
+  if(!mod.loaded) return false;
   try{
     await window.storage.set(moduleId + '-index', JSON.stringify(mod.items), false);
     return true;
@@ -5416,6 +5678,7 @@ async function persistScanIndex(moduleId){
 
 async function saveScanContent(moduleId, id, content){
   const mod = scanModules[moduleId];
+  if(typeof content !== 'string') return false;  // не пишем undefined поверх файла
   if(!mod.saveEnabled && !(await tryReEnableScanSave(moduleId))) return false;
   try{
     await window.storage.set(moduleId + ':' + id, content, false);
@@ -5607,6 +5870,12 @@ document.getElementById('scan_contractsFileInput').onchange = (e) => {
 };
 
 async function openScanEditor(moduleId, id){
+  // как в openDocEditor: гасим отложенное автосохранение прежнего файла
+  clearTimeout(scanAutosaveTimer);
+  if(currentScanId && (currentScanModule !== moduleId || currentScanId !== id)){
+    await commitScanChanges();
+  }
+
   currentScanModule = moduleId;
   currentScanId = id;
   activeEditor = 'scan';
@@ -5666,6 +5935,8 @@ function scheduleScanAutosave(){
 async function commitScanChanges(){
   if(!currentScanModule || !currentScanId) return false;
   const mod = scanModules[currentScanModule];
+  // содержимое ещё не загружено — сохранять нечего
+  if(typeof mod.contentCache[currentScanId] !== 'string') return false;
   const meta = mod.items.find(d=>d.id===currentScanId);
   if(!meta) return false;
   meta.name = document.getElementById('scanTitleInput').value.trim() || 'Без названия';
@@ -5813,6 +6084,16 @@ async function markBackupDone(){
 setTimeout(checkBackupReminder, 4000); // wait a few seconds so it doesn't compete with initial load toasts
 
 // ---------- init ----------
+// Просим браузер не вычищать наши данные при нехватке места. Особенно важно на
+// iOS: Safari сам удаляет localStorage/IndexedDB после ~7 дней без открытия
+// сайта. Разрешение не гарантировано, но без запроса шансов нет вовсе.
+if(navigator.storage && navigator.storage.persist){
+  navigator.storage.persisted()
+    .then(already => already ? true : navigator.storage.persist())
+    .then(granted => console.log('Постоянное хранилище:', granted ? 'разрешено' : 'не разрешено'))
+    .catch(() => {});
+}
+
 updateNotifyUI();
 loadTasks();
 </script>
