@@ -671,11 +671,16 @@
     background:#ffffff;color:#1a1a1a;width:100%;max-width:720px;min-height:520px;
     padding:48px 52px;box-shadow:0 10px 34px rgba(0,0,0,.45);
     font-family:'Inter',sans-serif;font-size:14px;line-height:1.65;
+    /* Широкая таблица из .docx раньше уезжала за край страницы и обрезалась
+       рамкой (у неё clip-path) — прокрутить её было нечем. Теперь она
+       прокручивается внутри самого листа. */
+    overflow-x:auto;
   }
   .doc-page:focus{outline:2px solid var(--accent);outline-offset:4px;}
   .doc-page p{margin:0 0 10px;}
-  .doc-page table{border-collapse:collapse;}
-  .doc-page td, .doc-page th{border:1px solid #999;padding:4px 8px;}
+  .doc-page table{border-collapse:collapse;max-width:none;}
+  .doc-page td, .doc-page th{border:1px solid #999;padding:4px 8px;overflow-wrap:break-word;}
+  .doc-page img{max-width:100%;height:auto;}
 
   .scan-image-view{
     max-width:100%;width:100%;box-shadow:0 10px 34px rgba(0,0,0,.45);border-radius:4px;
@@ -690,6 +695,7 @@
     .doc-page, .xlsx-page{
       position:fixed;top:0;left:0;width:100%;max-width:none;box-shadow:none;margin:0;
       padding:14mm 16mm;
+      overflow:visible;   /* на печати ничего не прокручивается — показываем целиком */
     }
     @page{ margin:0; }
   }
@@ -1003,6 +1009,11 @@
 
     .doc-editor-toolbar{padding:10px;gap:8px;}
     .doc-title-input, .doc-tags-input{min-width:0;flex:1 1 100%;}
+
+    /* На телефоне поля съедали до 160 px ширины листа — из-за этого таблицы
+       из Word упирались в край. Ужимаем рамку и отступы страницы. */
+    .doc-editor-frame{padding:10px;}
+    .doc-page{padding:22px 18px;min-height:420px;}
 
     /* let wide tables (ОТЕЛЬ / Excel) scroll horizontally instead of squeezing */
     .xlsx-editor-frame, .hud-table-scroll{-webkit-overflow-scrolling:touch;}
@@ -1692,6 +1703,72 @@ function mergeRecovered(stored, pending){
   return list.concat(pending.filter(x => x && !ids.has(x.id)));
 }
 
+// ---------- возврат из редактора ----------
+// Две вещи, которых не хватало:
+//  1. Аппаратная кнопка «Назад» на телефоне уводила с сайта целиком, вместо
+//     того чтобы просто закрыть открытый файл.
+//  2. Кнопка «← К задачам» возвращала к началу списка задач, и папка, из
+//     которой человек вошёл, оставалась далеко внизу — ощущалось как «выкинуло».
+let editorHistoryDepth = 0;
+let editorOriginPanel = null;   // 'doc' | 'xlsx' | 'scan_trauma' | ... | 'hotel'
+
+function pushEditorHistory(){
+  if(editorHistoryDepth) return;          // переключение между файлами — не новая запись
+  try{ history.pushState({ neiroEditor: true }, ''); editorHistoryDepth = 1; }catch(e){}
+}
+
+function popEditorHistory(){
+  if(!editorHistoryDepth) return;
+  editorHistoryDepth = 0;
+  try{ history.back(); }catch(e){}
+}
+
+// Разворачиваем ту папку, из которой открыли файл, и подводим к ней экран.
+function restoreEditorOrigin(){
+  const key = editorOriginPanel;
+  editorOriginPanel = null;
+  if(!key) return;
+  const body = document.getElementById(key + 'Body');
+  const icon = document.getElementById(key + 'CollapseIcon');
+  if(body) body.classList.remove('collapsed');
+  if(icon) icon.classList.remove('collapsed');
+  const anchor = document.getElementById(key + 'ToggleHeader')
+              || document.getElementById(key + 'OpenBtn')
+              || document.getElementById('hotelOpenBtn');
+  if(anchor && anchor.scrollIntoView){
+    requestAnimationFrame(() => {
+      try{ anchor.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      catch(e){ anchor.scrollIntoView(); }
+    });
+  }
+}
+
+// Закрыть то, что открыто сейчас, дописав правки. Историю не трогаем: сюда
+// приходят либо из popstate (запись уже снята), либо из close*, где она снимается.
+async function exitEditorNow(){
+  if(activeEditor === 'doc'){
+    clearTimeout(autosaveTimer);
+    await commitDocChanges();
+    closeDocEditor();
+  } else if(activeEditor === 'xlsx'){
+    clearTimeout(xlsxAutosaveTimer);
+    await commitXlsxChanges();
+    closeXlsxEditor();
+  } else if(activeEditor === 'scan'){
+    clearTimeout(scanAutosaveTimer);
+    await commitScanChanges();
+    closeScanEditor();
+  } else if(activeEditor === 'hotel'){
+    closeHotelEditor();
+  }
+}
+
+window.addEventListener('popstate', () => {
+  if(!activeEditor) return;
+  editorHistoryDepth = 0;   // браузер уже снял нашу запись
+  exitEditorNow();
+});
+
 let saveEnabled = false;
 let lastSavedValue = null;
 
@@ -2209,7 +2286,11 @@ function buildPrintableFileHtml(title, innerHtml, extraStyle){
 <style>
   body{font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;background:#fff;margin:0;padding:24px;}
   table{border-collapse:collapse;}
-  td,th{border:1px solid #999;padding:4px 8px;}
+  td,th{border:1px solid #999;padding:4px 8px;overflow-wrap:break-word;}
+  img{max-width:100%;height:auto;}
+  /* На экране телефона широкая таблица должна прокручиваться, а не обрезаться.
+     На печати прокрутки нет — таблица переносится по страницам как обычно. */
+  @media screen{ body{overflow-x:auto;} }
   .print-toolbar{
     position:sticky;top:0;background:#fff;padding:12px 0;margin:-24px -24px 20px;
     border-bottom:2px solid #eee;text-align:center;
@@ -3592,8 +3673,8 @@ function renderRecentPanel(){
   `).join('');
   list.querySelectorAll('[data-recent-type]').forEach(item=>{
     item.onclick = () => {
-      if(item.dataset.recentType === 'doc') openDocEditor(item.dataset.recentId);
-      else openXlsxEditor(item.dataset.recentId);
+      if(item.dataset.recentType === 'doc') openDocEditor(item.dataset.recentId, 'doc');
+      else openXlsxEditor(item.dataset.recentId, 'xlsx');
     };
   });
 }
@@ -3637,6 +3718,8 @@ function closeDocEditor(){
   docPageReady = false;
   activeEditor = null;
   render();
+  popEditorHistory();
+  restoreEditorOrigin();
 }
 
 function renderDocSideList(){
@@ -3685,7 +3768,7 @@ function renderDocSideList(){
   list.querySelectorAll('[data-doc-card]').forEach(item=>{
     item.onclick = (e) => {
       if(e.target.closest('button')) return;
-      openDocEditor(item.dataset.docCard);
+      openDocEditor(item.dataset.docCard, 'doc');
     };
   });
   list.querySelectorAll('[data-doc-del]').forEach(btn=>{
@@ -3693,9 +3776,11 @@ function renderDocSideList(){
   });
 }
 
-async function openDocEditor(id){
+async function openDocEditor(id, origin){
   const meta = documents.find(d=>d.id===id);
   if(!meta) return;
+  if(origin) editorOriginPanel = origin;
+  pushEditorHistory();
 
   // Автосохранение работает с задержкой 1,2 с. Если переключиться на другой
   // документ быстрее, отложенный таймер срабатывал уже после смены
@@ -4571,7 +4656,7 @@ function renderXlsxSideList(){
   list.querySelectorAll('[data-xlsx-card]').forEach(item=>{
     item.onclick = (e) => {
       if(e.target.closest('button')) return;
-      openXlsxEditor(item.dataset.xlsxCard);
+      openXlsxEditor(item.dataset.xlsxCard, 'xlsx');
     };
   });
   list.querySelectorAll('[data-xlsx-del]').forEach(btn=>{
@@ -4583,6 +4668,8 @@ function closeXlsxEditor(){
   currentXlsxId = null;
   activeEditor = null;
   render();
+  popEditorHistory();
+  restoreEditorOrigin();
 }
 
 // ---------- xlsx formulas ----------
@@ -4641,9 +4728,11 @@ function renderXlsxTable(grid){
   page.appendChild(table);
 }
 
-async function openXlsxEditor(id){
+async function openXlsxEditor(id, origin){
   const meta = xlsxSheets.find(d=>d.id===id);
   if(!meta) return;
+  if(origin) editorOriginPanel = origin;
+  pushEditorHistory();
 
   // То же, что и в openDocEditor: отложенное автосохранение прежней таблицы
   // не должно сработать уже после смены currentXlsxId.
@@ -5325,6 +5414,8 @@ document.getElementById('hotelSearchInput').oninput = (e) => {
 const HOTEL_FIXED_COLS = ['Фамилия','Имя','Отчество','Год рождения'];
 
 function openHotelEditor(){
+  editorOriginPanel = 'hotel';
+  pushEditorHistory();
   activeEditor = 'hotel';
   render();
   renderHotelTable();
@@ -5333,6 +5424,8 @@ function openHotelEditor(){
 function closeHotelEditor(){
   activeEditor = null;
   render();
+  popEditorHistory();
+  restoreEditorOrigin();
 }
 
 // Открывается сразу по клику: переименование теперь висит на удержании и
@@ -5870,6 +5963,8 @@ document.getElementById('scan_contractsFileInput').onchange = (e) => {
 };
 
 async function openScanEditor(moduleId, id){
+  editorOriginPanel = moduleId;   // возвращаемся именно в эту папку
+  pushEditorHistory();
   // как в openDocEditor: гасим отложенное автосохранение прежнего файла
   clearTimeout(scanAutosaveTimer);
   if(currentScanId && (currentScanModule !== moduleId || currentScanId !== id)){
@@ -5919,6 +6014,8 @@ function closeScanEditor(){
   currentScanModule = null;
   currentScanId = null;
   render();
+  popEditorHistory();
+  restoreEditorOrigin();
 }
 
 document.getElementById('scanBackBtn').onclick = closeScanEditor;
