@@ -625,7 +625,7 @@ function switchView(id,el){
 }
 
 async function health(){let h=await fetch('/api/health').then(r=>r.json());let m=document.getElementById('mode');m.textContent=h.agent_mode+(h.model?' · '+h.model:'');m.className='mode '+(h.agent_mode==='AI'?'good':'warning')}
-async function load(){let [ps,pa]=await Promise.all([fetch('/api/projects').then(r=>r.json()),fetch('/api/approvals?status=PENDING').then(r=>r.json())]);n.textContent=ps.length;r.textContent=ps.filter(x=>x.status==='RUNNING'||x.status==='DEPLOYING').length;w.textContent=pa.length;let root=projects;root.innerHTML=ps.length?'':'<div class="sub">Пока пусто. Дай первую команду.</div>';ps.slice().reverse().forEach(p=>{let d=document.createElement('div');d.className='project';d.onclick=()=>show(p.id);d.innerHTML='<b>#'+p.id+' '+esc(p.name)+'</b><div class="sub">'+p.project_type+' · <span class="'+(p.status==='FAILED'||p.status==='DEPLOY_FAILED'?'bad':p.status==='WAITING_APPROVAL'||p.status==='DEPLOYING'?'warning':'good')+'">'+p.status+'</span> · '+p.agent_mode+'</div>'+(p.publication&&p.publication.public_url?'<div style="margin-top:6px"><a class="good" href="'+esc(p.publication.public_url)+'" target="_blank" onclick="event.stopPropagation()">Открыть сайт ↗</a></div>':'')+'<div>'+p.assigned_agents.map(a=>'<span class="tag">'+a+'</span>').join('')+'</div>';root.appendChild(d)})}
+async function load(){let [ps,pa]=await Promise.all([fetch('/api/projects',{cache:'no-store'}).then(r=>r.json()),fetch('/api/approvals?status=PENDING',{cache:'no-store'}).then(r=>r.json())]);n.textContent=ps.length;r.textContent=ps.filter(x=>x.status==='RUNNING'||x.status==='DEPLOYING').length;w.textContent=pa.length;let root=projects;root.innerHTML=ps.length?'':'<div class="sub">Пока пусто. Дай первую команду.</div>';ps.slice().reverse().forEach(p=>{let d=document.createElement('div');d.className='project';d.onclick=()=>show(p.id);d.innerHTML='<b>#'+p.id+' '+esc(p.name)+'</b><div class="sub">'+p.project_type+' · <span class="'+(p.status==='FAILED'||p.status==='DEPLOY_FAILED'?'bad':p.status==='WAITING_APPROVAL'||p.status==='DEPLOYING'?'warning':'good')+'">'+p.status+'</span> · '+p.agent_mode+'</div>'+(p.publication&&p.publication.public_url?'<div style="margin-top:6px"><a class="good" href="'+esc(p.publication.public_url)+'" target="_blank" onclick="event.stopPropagation()">Открыть сайт ↗</a></div>':'')+'<div>'+p.assigned_agents.map(a=>'<span class="tag">'+a+'</span>').join('')+'</div>';root.appendChild(d)})}
 async function loadFullProjects(){let ps=await fetch('/api/projects').then(r=>r.json());projectsFull.innerHTML=ps.length?'':'<div class="sub">Проектов пока нет.</div>';ps.slice().reverse().forEach(p=>{let d=document.createElement('div');d.className='project';d.onclick=()=>openWorkspace(p.id);d.innerHTML='<b>#'+p.id+' '+esc(p.name)+'</b><div class="sub">'+esc(p.project_type)+' · '+esc(p.status)+' · '+esc(p.agent_mode)+'</div>'+(p.publication&&p.publication.public_url?'<div style="margin-top:6px"><a class="good" href="'+esc(p.publication.public_url)+'" target="_blank" onclick="event.stopPropagation()">Открыть сайт ↗</a></div>':'')+'<div>'+p.assigned_agents.map(a=>'<span class="tag">'+esc(a)+'</span>').join('')+'</div>';projectsFull.appendChild(d)})}
 async function loadAgents(){let d=await fetch('/api/system-state').then(r=>r.json());let roles=[['Analyst','Разбирает запрос и формирует ТЗ'],['Developer','Создаёт реализацию и файлы проекта'],['QA','Проверяет результат и останавливает ошибки'],['Approval','Ждёт твоего решения перед внешним действием'],['GitHub','Готовит публикацию проекта'],['Railway','Готовит развёртывание сервиса']];agentsFull.innerHTML=roles.map(x=>'<div class="module"><b>'+x[0]+'</b><span class="sub">'+x[1]+'</span></div>').join('')}
 async function connFull(){let d=await fetch('/api/connections').then(r=>r.json());connectionsFull.innerHTML='<div class="'+(d.summary.production_ready?'good':'warning')+'">Production ready: '+(d.summary.production_ready?'ДА':'НЕТ')+'</div>'+d.items.map(x=>'<div class="module" style="margin-top:8px"><b>'+esc(x.name)+'</b><span class="'+(x.status==='CONNECTED'?'good':'warning')+'">'+esc(x.status)+'</span>'+(x.missing_names.length?'<div class="sub">Не настроено: '+x.missing_names.map(esc).join(', ')+'</div>':'')+'</div>').join('')}
@@ -652,13 +652,25 @@ async function decide(id,what){await fetch('/api/approvals/'+id+'/'+what,{method
 async function conn(){let d=await fetch('/api/connections').then(r=>r.json());connections.innerHTML='<div class="'+(d.summary.production_ready?'good':'warning')+'">Production ready: '+(d.summary.production_ready?'ДА':'НЕТ')+'</div><div class="sub">Agent mode: '+d.summary.agent_mode+'</div>'+d.items.map(x=>'<div class="sub">'+x.name+': '+x.status+(x.missing_names.length?' ('+x.missing_names.join(', ')+')':'')+'</div>').join('')}
 async function systemState(){let d=await fetch('/api/system-state').then(r=>r.json());sysver.textContent=d.version;pipeline.innerHTML=d.pipeline.map(x=>'<span class="step">'+esc(x)+'</span>').join('<span class="sub">→</span>');modules.innerHTML=d.modules.map(x=>'<div class="module"><b>'+esc(x.name)+'</b><span class="'+(x.status==='ACTIVE'||x.status==='READY'?'good':x.status==='PREPARED'?'warning':'sub')+'">'+esc(x.status)+'</span></div>').join('')}
 health();load();conn();approvalLoad();systemState();
-setInterval(async()=>{try{
-  await load();
-  await approvalLoad();
-  if(activeProjectId && document.getElementById('projectWorkspace').classList.contains('active')){
-    await openWorkspace(activeProjectId);
-  }
-}catch(e){}},5000);
+let refreshBusy=false;
+async function refreshDashboard(){
+ if(refreshBusy||document.hidden)return;
+ refreshBusy=true;
+ try{
+   const ps=await fetch('/api/projects',{cache:'no-store'}).then(r=>r.json());
+   const target=ps.find(p=>p.publication&&p.publication.railway_service_id&&p.status!=='DEPLOYED'&&p.status!=='DEPLOY_FAILED');
+   if(target){await fetch('/api/projects/'+target.id+'/deployment-sync',{method:'POST'});}
+   await load();
+   await approvalLoad();
+   if(activeProjectId&&document.getElementById('projectWorkspace').classList.contains('active')){
+     await openWorkspace(activeProjectId);
+   }
+ }catch(e){console.error('Dashboard refresh failed',e)}
+ finally{refreshBusy=false}
+}
+setInterval(refreshDashboard,10000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDashboard()});
+refreshDashboard();
 </script></body></html>'''
 
 @app.get("/", response_class=HTMLResponse)
