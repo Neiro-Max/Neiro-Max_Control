@@ -39,6 +39,16 @@ def init_db():
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS control_approvals (
+                    id BIGSERIAL PRIMARY KEY,
+                    project_id BIGINT NOT NULL,
+                    action TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    decided_at TIMESTAMPTZ
+                )
+            """)
         conn.commit()
 
 def db_list_projects():
@@ -82,6 +92,44 @@ def db_save_project(data: dict):
             cur.execute("UPDATE control_projects SET data=%s, updated_at=NOW() WHERE id=%s", (Jsonb(data), data["id"]))
         conn.commit()
     return data
+
+def create_approval(project_id: int, action: str):
+    if not db_ready():
+        return None
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO control_approvals(project_id, action) VALUES (%s,%s) RETURNING id", (project_id, action))
+            aid = cur.fetchone()[0]
+        conn.commit()
+    return aid
+
+def list_approvals(status: str | None = None):
+    if not db_ready():
+        return []
+    sql = "SELECT id, project_id, action, status, created_at, decided_at FROM control_approvals"
+    params = ()
+    if status:
+        sql += " WHERE status=%s"
+        params = (status,)
+    sql += " ORDER BY id DESC"
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+    return [{"id":r[0],"project_id":r[1],"action":r[2],"status":r[3],"created_at":r[4].isoformat(),"decided_at":r[5].isoformat() if r[5] else None} for r in rows]
+
+def decide_approval(approval_id: int, decision: str):
+    decision = decision.upper()
+    if decision not in ("APPROVED","REJECTED"):
+        raise HTTPException(400, "Invalid decision")
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE control_approvals SET status=%s, decided_at=NOW() WHERE id=%s AND status='PENDING' RETURNING id", (decision, approval_id))
+            row = cur.fetchone()
+        conn.commit()
+    if not row:
+        raise HTTPException(404, "Approval not found")
+    return {"id": approval_id, "status": decision}
 
 def auth_enabled():
     return bool(os.getenv("CONTROL_PASSWORD"))
@@ -238,6 +286,18 @@ def run_pipeline(project_id: int):
             p["tasks"][-1]["error"] = str(exc)
         db_save_project(p)
         return p
+
+@app.get("/api/approvals")
+def approvals(status: str | None = None):
+    return list_approvals(status=status)
+
+@app.post("/api/approvals/{approval_id}/approve")
+def approve(approval_id: int):
+    return decide_approval(approval_id, "APPROVED")
+
+@app.post("/api/approvals/{approval_id}/reject")
+def reject(approval_id: int):
+    return decide_approval(approval_id, "REJECTED")
 
 @app.get("/api/connections")
 def connections():
