@@ -9,9 +9,104 @@ try:
 except Exception:
     OpenAI = None
 
+try:
+    import psycopg
+    from psycopg.types.json import Jsonb
+except Exception:
+    psycopg = None
+    Jsonb = None
+
 app = FastAPI(title="NEIRO MAX CONTROL", version="1.0-infrastructure")
 projects = []
 next_id = 1
+
+def db_ready():
+    return bool(os.getenv("DATABASE_URL")) and psycopg is not None
+
+def db_conn():
+    return psycopg.connect(os.environ["DATABASE_URL"])
+
+def init_db():
+    if not db_ready():
+        return
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS control_projects (
+                    id BIGSERIAL PRIMARY KEY,
+                    data JSONB NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+            """)
+        conn.commit()
+
+def db_list_projects():
+    if not db_ready():
+        return projects
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT data FROM control_projects ORDER BY id ASC")
+            return [row[0] for row in cur.fetchall()]
+
+def db_get_project(project_id: int):
+    if not db_ready():
+        return next((x for x in projects if x.get("id") == project_id), None)
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT data FROM control_projects WHERE id=%s", (project_id,))
+            row = cur.fetchone()
+            return row[0] if row else None
+
+def db_create_project(data: dict):
+    global next_id
+    if not db_ready():
+        data["id"] = next_id
+        next_id += 1
+        projects.append(data)
+        return data
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO control_projects(data) VALUES (%s) RETURNING id", (Jsonb(data),))
+            pid = cur.fetchone()[0]
+            data["id"] = pid
+            cur.execute("UPDATE control_projects SET data=%s, updated_at=NOW() WHERE id=%s", (Jsonb(data), pid))
+        conn.commit()
+    return data
+
+def db_save_project(data: dict):
+    if not db_ready():
+        return data
+    with db_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE control_projects SET data=%s, updated_at=NOW() WHERE id=%s", (Jsonb(data), data["id"]))
+        conn.commit()
+    return data
+
+def auth_enabled():
+    return bool(os.getenv("CONTROL_PASSWORD"))
+
+@app.middleware("http")
+async def owner_auth(request, call_next):
+    if not auth_enabled() or request.url.path == "/api/health":
+        return await call_next(request)
+    auth = request.headers.get("authorization", "")
+    ok = False
+    if auth.startswith("Basic "):
+        try:
+            raw = base64.b64decode(auth[6:]).decode("utf-8")
+            username, password = raw.split(":", 1)
+            ok = secrets.compare_digest(username, os.getenv("CONTROL_USER", "sergey")) and secrets.compare_digest(password, os.getenv("CONTROL_PASSWORD", ""))
+        except Exception:
+            ok = False
+    if not ok:
+        from fastapi.responses import Response
+        return Response("Authentication required", status_code=401, headers={"WWW-Authenticate": 'Basic realm="NEIRO MAX CONTROL"'})
+    return await call_next(request)
+
+@app.on_event("startup")
+def startup():
+    init_db()
 
 class Cmd(BaseModel):
     command: str
