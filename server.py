@@ -615,6 +615,7 @@ HTML = r'''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name
 </main></div><script>
 const esc=s=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 let activeProjectId=null;
+let selectedCenterProjectId=null;
 function switchView(id,el){
   if(id!=='projectWorkspace') activeProjectId=null;
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
@@ -647,7 +648,19 @@ async function openWorkspace(id){
 }
 
 
-async function show(id){let p=await fetch('/api/projects/'+id).then(r=>r.json());let html='<b>#'+p.id+' '+esc(p.name)+'</b><div class="sub">'+p.status+' · '+p.agent_mode+'</div>';if(p.artifacts){html+='<div class="task"><b>Файлы проекта</b><div>'+Object.keys(p.artifacts).map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</div></div>'}if(p.publication){html+='<div class="task"><b>Публикация</b><div class="sub">GitHub: '+esc(p.publication.github_gate)+' · '+esc(p.publication.github_message)+'</div><div class="sub">Railway: '+esc(p.publication.railway_gate)+' · '+esc(p.publication.railway_message)+'</div></div>'};(p.tasks||[]).forEach(t=>{let tx=t.result?.text||t.error||'';html+='<div class="task"><b>'+esc(t.agent)+'</b> · <span class="'+(t.status==='FAILED'?'bad':t.status==='WAITING_APPROVAL'?'warning':'good')+'">'+t.status+'</span><pre>'+esc(tx)+'</pre></div>'});detail.innerHTML=html}
+async function show(id){
+  selectedCenterProjectId=id;
+  await fetch('/api/projects/'+id+'/deployment-sync',{method:'POST'}).catch(()=>null);
+  let p=await fetch('/api/projects/'+id,{cache:'no-store'}).then(r=>r.json());
+  let html='<b>#'+p.id+' '+esc(p.name)+'</b><div class="sub"><span class="'+(p.status==='FAILED'||p.status==='DEPLOY_FAILED'?'bad':p.status==='WAITING_APPROVAL'||p.status==='DEPLOYING'?'warning':'good')+'">'+esc(p.status)+'</span> · '+esc(p.agent_mode)+'</div>';
+  if(p.artifacts){html+='<div class="task"><b>Файлы проекта</b><div>'+Object.keys(p.artifacts).map(x=>'<span class="tag">'+esc(x)+'</span>').join('')+'</div></div>'}
+  if(p.publication){
+    let rs=p.publication.railway_deployment_status||p.publication.railway_gate;
+    html+='<div class="task"><b>Публикация</b><div class="sub">GitHub: '+esc(p.publication.github_gate)+' · '+esc(p.publication.github_message)+'</div><div class="sub">Railway: <span class="'+(rs==='SUCCESS'?'good':rs==='FAILED'||rs==='CRASHED'?'bad':'warning')+'">'+esc(rs)+'</span> · '+esc(p.publication.railway_message||'')+'</div>'+(p.publication.public_url?'<div style="margin-top:10px"><a class="good" href="'+esc(p.publication.public_url)+'" target="_blank">Открыть сайт ↗</a></div>':'')+'</div>'
+  }
+  (p.tasks||[]).forEach(t=>{let tx=t.result?.text||t.error||'';html+='<div class="task"><b>'+esc(t.agent)+'</b> · <span class="'+(t.status==='FAILED'?'bad':t.status==='WAITING_APPROVAL'?'warning':'good')+'">'+t.status+'</span><pre>'+esc(tx)+'</pre></div>'});
+  detail.innerHTML=html
+}
 async function go(){let command=cmd.value.trim();if(!command)return;go.disabled=true;msg.textContent='Orchestrator запускает цепочку...';let p=await fetch('/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command,autonomy_level:2})}).then(r=>r.json());let done=await fetch('/api/pipeline/'+p.id+'/run',{method:'POST'}).then(r=>r.json());msg.textContent=done.status==='FAILED'?'Цепочка остановлена: QA/агент сообщил об ошибке.':'Цепочка завершена до точки подтверждения.';cmd.value='';go.disabled=false;await load();show(p.id)}
 async function approvalLoad(){let a=await fetch('/api/approvals?status=PENDING').then(r=>r.json());approvals.innerHTML=a.length?'':'<div class="sub">Нет ожидающих решений.</div>';a.forEach(x=>{let d=document.createElement('div');d.className='approval';d.innerHTML='<b>Проект #'+x.project_id+'</b><div class="warning">'+esc(x.action)+'</div><div class="sub">'+(x.execution_status?('Исполнение: '+esc(x.execution_status)+(x.execution_message?' · '+esc(x.execution_message):'')):'')+'</div><div class="approval-actions"><button class="btn approve" onclick="decide('+x.id+',\'approve\')">Одобрить</button><button class="btn reject" onclick="decide('+x.id+',\'reject\')">Отклонить</button></div>';approvals.appendChild(d)})}
 async function decide(id,what){await fetch('/api/approvals/'+id+'/'+what,{method:'POST'});await approvalLoad();await load()}
@@ -666,6 +679,9 @@ async function refreshDashboard(){
    await approvalLoad();
    if(activeProjectId&&document.getElementById('projectWorkspace').classList.contains('active')){
      await openWorkspace(activeProjectId);
+   }
+   if(selectedCenterProjectId&&document.getElementById('center').classList.contains('active')){
+     await show(selectedCenterProjectId);
    }
  }catch(e){console.error('Dashboard refresh failed',e)}
  finally{refreshBusy=false}
