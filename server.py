@@ -338,8 +338,10 @@ def sync_project_deployment(project_id: int):
     if not project:
         raise HTTPException(404, "Project not found")
     pub = project.get("publication") or {}
-    if not pub.get("railway_service_id") and pub.get("railway_gate") != "SUCCESS":
-        return {"status": "NOT_STARTED", "url": None}
+    # Even older projects may have a real Railway service without a stored service_id.
+    # If GitHub was published, ask railway-executor to discover generated-project-<id>.
+    if pub.get("github_gate") != "SUCCESS" and not pub.get("railway_service_id"):
+        return {"status": "NOT_STARTED", "url": pub.get("public_url")}
 
     try:
         base = "http://railway-executor.railway.internal:3000/status"
