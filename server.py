@@ -215,17 +215,19 @@ def now():
     return datetime.now(timezone.utc).isoformat()
 
 def ai_ready():
-    return bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None
+    enabled = os.getenv("AI_EXECUTION_ENABLED", "false").lower() in ("1", "true", "yes", "on")
+    return enabled and bool(os.getenv("OPENAI_API_KEY")) and OpenAI is not None
 
 def model_name():
     return os.getenv("OPENAI_MODEL", "gpt-6-luna")
 
 def route(command: str):
     s = command.lower()
-    if any(x in s for x in ["telegram", "телеграм", "бот", "vk", "вк"]):
-        return "bot", ["analyst", "bot_developer", "qa_tester", "deploy_agent"]
-    if any(x in s for x in ["сайт", "web", "лендинг", "landing"]):
+    if any(x in s for x in ["сайт", "web", "лендинг", "landing", "website"]):
         return "website", ["analyst", "web_developer", "qa_tester", "deploy_agent"]
+    words = set(s.replace(",", " ").replace(".", " ").replace(":", " ").split())
+    if any(x in s for x in ["telegram", "телеграм", "vk", "вк"]) or "бот" in words or "bot" in words:
+        return "bot", ["analyst", "bot_developer", "qa_tester", "deploy_agent"]
     return "general", ["analyst", "project_manager", "qa_tester"]
 
 AGENT_INSTRUCTIONS = {
@@ -249,14 +251,21 @@ def call_agent(agent: str, user_request: str, context: str):
             "text": f"{agent}: реальный запуск ожидает OPENAI_API_KEY. Запрос принят, контекст подготовлен.",
             "model": None
         }
-    client = OpenAI()
-    prompt = AGENT_INSTRUCTIONS[agent]
-    response = client.responses.create(
-        model=model_name(),
-        instructions=prompt,
-        input=f"ИСХОДНЫЙ ЗАПРОС:\n{user_request}\n\nКОНТЕКСТ ПРЕДЫДУЩИХ ЭТАПОВ:\n{context}",
-    )
-    return {"mode": "AI", "text": response.output_text, "model": model_name()}
+    try:
+        client = OpenAI()
+        prompt = AGENT_INSTRUCTIONS[agent]
+        response = client.responses.create(
+            model=model_name(),
+            instructions=prompt,
+            input=f"ИСХОДНЫЙ ЗАПРОС:\n{user_request}\n\nКОНТЕКСТ ПРЕДЫДУЩИХ ЭТАПОВ:\n{context}",
+        )
+        return {"mode": "AI", "text": response.output_text, "model": model_name()}
+    except Exception as exc:
+        return {
+            "mode": "DEMO",
+            "text": f"{agent}: API недоступен, инфраструктурный режим продолжен без AI-вызова. {str(exc)[:160]}",
+            "model": None
+        }
 
 def execute_railway_approval(approval_id: int):
     approval = get_approval_record(approval_id)
@@ -328,7 +337,7 @@ def health():
     return {
         "status": "ok",
         "app": "NEIRO MAX CONTROL",
-        "version": "1.7-railway-execution",
+        "version": "1.8-safe-demo-routing",
         "agent_mode": "AI" if ai_ready() else "DEMO",
         "database": "CONNECTED" if db_ready() else "NOT_CONFIGURED",
         "auth": "ENABLED" if auth_enabled() else "NOT_CONFIGURED",
@@ -514,7 +523,7 @@ def connections():
 
 HTML = r'''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NEIRO MAX CONTROL</title><style>
 *{box-sizing:border-box}body{margin:0;background:#0b0e14;color:#edf2f8;font:14px Arial,sans-serif}.app{display:grid;grid-template-columns:230px 1fr;min-height:100vh}.side{background:#090c12;border-right:1px solid #273142;padding:24px 16px;position:relative}.brand{font-weight:800;font-size:20px;margin-bottom:34px}.brand small{display:block;color:#8996a8;font-size:10px;letter-spacing:2px}.nav{padding:11px 13px;margin:6px 0;border-radius:10px;color:#adb8c7;cursor:pointer;user-select:none}.nav:hover{background:#121824;color:#fff}.nav.active{background:#171d29;color:white}.view{display:none}.view.active{display:block}.section-title{margin:0 0 14px;font-size:22px}.workspace{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.file-list{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.kv{display:grid;grid-template-columns:140px 1fr;gap:8px;margin:6px 0}.timeline{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.timeline .step{font-size:12px}@media(max-width:900px){.workspace{grid-template-columns:1fr}}.ok{position:absolute;bottom:25px;color:#4fd49a}.main{padding:28px 34px;max-width:1500px;width:100%}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}h1{margin:0;font-size:28px}.sub{color:#8e9bad}.cmd{background:linear-gradient(120deg,#171527,#111620);border:1px solid #5b478f;border-radius:18px;padding:24px;margin-bottom:18px}.row{display:flex;gap:10px;margin-top:16px}.row input{flex:1;background:#0d1118;border:1px solid #273142;color:white;padding:15px;border-radius:11px}.btn{border:0;border-radius:10px;padding:12px 18px;font-weight:700;cursor:pointer}.primary{background:#7b61ff;color:white}.secondary{background:#151b25;color:#dce6f3;border:1px solid #2a3443}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}.stat,.card{background:#121722;border:1px solid #273142;border-radius:14px;padding:17px}.stat strong{font-size:24px;display:block;margin-top:6px}.grid{display:grid;grid-template-columns:1.45fr 1fr;gap:14px}.project{background:#0e131c;border:1px solid #202939;padding:14px;border-radius:11px;margin:9px 0;cursor:pointer}.task{background:#0b1018;border:1px solid #222c3c;border-radius:10px;padding:11px;margin:8px 0}.task pre{white-space:pre-wrap;color:#c9d4e2;font:12px/1.45 Consolas,monospace;max-height:220px;overflow:auto}.tag{display:inline-block;padding:4px 8px;border-radius:8px;background:#1a2230;margin:5px 5px 0 0;font-size:11px}.warning{color:#ffc55b}.good{color:#4fd49a}.bad{color:#ff6b7a}.mode{padding:5px 9px;border-radius:8px;background:#20283a;font-size:12px}.system{margin:18px 0;background:#10151f;border:1px solid #2c3750;border-radius:14px;padding:17px}.pipeline{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.step{padding:8px 10px;border-radius:9px;background:#171f2d;border:1px solid #2d3a50}.module-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:12px}.module{background:#0d121a;border:1px solid #232e3f;border-radius:10px;padding:10px}.module b{display:block;margin-bottom:4px}@media(max-width:900px){.module-grid{grid-template-columns:repeat(2,1fr)}}.approval{background:#0f151f;border:1px solid #364158;border-radius:10px;padding:12px;margin:9px 0}.approval-actions{display:flex;gap:8px;margin-top:9px}.approve{background:#1f8f5f;color:#fff}.reject{background:#7a2f3a;color:#fff}@media(max-width:850px){.app{grid-template-columns:1fr}.side{display:none}.stats{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.main{padding:18px}}
-</style></head><body><div class="app"><aside class="side"><div class="brand">NEIRO MAX<small>CONTROL CENTER</small></div><div class="nav active" data-view="center" onclick="switchView('center',this)">◈ Центр</div><div class="nav" data-view="projectsView" onclick="switchView('projectsView',this)">▦ Проекты</div><div class="nav" data-view="agentsView" onclick="switchView('agentsView',this)">◉ Работоботы</div><div class="nav" data-view="connectionsView" onclick="switchView('connectionsView',this)">⚙ Подключения</div><div class="ok">● Система онлайн</div></aside><main class="main"><div class="top"><div><h1>Центр управления</h1><div class="sub">NEIRO MAX CONTROL · Railway Execution v1.7</div></div><div><span id="mode" class="mode">...</span> &nbsp; <b>Сергей</b></div></div><div id="center" class="view active"><section class="cmd"><h2>Что нужно сделать?</h2><div class="sub">Дай задачу обычным языком. Orchestrator выберет исполнителей и запустит цепочку.</div><div class="row"><input id="cmd" placeholder="Например: создай Telegram-бота для стоматологии с записью клиентов"><button class="btn primary" id="go" onclick="go()">Запустить</button></div><div id="msg" class="sub" style="margin-top:10px"></div></section><section class="stats"><div class="stat"><span class="sub">Проекты</span><strong id="n">0</strong></div><div class="stat"><span class="sub">В работе</span><strong id="r">0</strong></div><div class="stat"><span class="sub">Ждут решения</span><strong id="w">0</strong></div><div class="stat"><span class="sub">Статус</span><strong class="good">ONLINE</strong></div></section><section class="system"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><h3 style="margin:0">Система NEIRO MAX</h3><div class="sub">Живая архитектура и готовность модулей</div></div><div class="mode good" id="sysver">v1.3</div></div><div class="pipeline" id="pipeline"></div><div class="module-grid" id="modules"></div></section><div class="grid"><section class="card"><h3>Проекты</h3><div id="projects"></div></section><section class="card"><h3>Выбранный проект</h3><div id="detail" class="sub">Выбери проект слева.</div><hr style="border-color:#273142;margin:20px 0"><h3>Нужно твоё решение</h3><div id="approvals"></div><hr style="border-color:#273142;margin:20px 0"><h3>Подключения</h3><button class="btn secondary" onclick="conn()">Проверить</button><div id="connections" style="margin-top:12px"></div></section></div>
+</style></head><body><div class="app"><aside class="side"><div class="brand">NEIRO MAX<small>CONTROL CENTER</small></div><div class="nav active" data-view="center" onclick="switchView('center',this)">◈ Центр</div><div class="nav" data-view="projectsView" onclick="switchView('projectsView',this)">▦ Проекты</div><div class="nav" data-view="agentsView" onclick="switchView('agentsView',this)">◉ Работоботы</div><div class="nav" data-view="connectionsView" onclick="switchView('connectionsView',this)">⚙ Подключения</div><div class="ok">● Система онлайн</div></aside><main class="main"><div class="top"><div><h1>Центр управления</h1><div class="sub">NEIRO MAX CONTROL · Safe Demo Routing v1.8</div></div><div><span id="mode" class="mode">...</span> &nbsp; <b>Сергей</b></div></div><div id="center" class="view active"><section class="cmd"><h2>Что нужно сделать?</h2><div class="sub">Дай задачу обычным языком. Orchestrator выберет исполнителей и запустит цепочку.</div><div class="row"><input id="cmd" placeholder="Например: создай Telegram-бота для стоматологии с записью клиентов"><button class="btn primary" id="go" onclick="go()">Запустить</button></div><div id="msg" class="sub" style="margin-top:10px"></div></section><section class="stats"><div class="stat"><span class="sub">Проекты</span><strong id="n">0</strong></div><div class="stat"><span class="sub">В работе</span><strong id="r">0</strong></div><div class="stat"><span class="sub">Ждут решения</span><strong id="w">0</strong></div><div class="stat"><span class="sub">Статус</span><strong class="good">ONLINE</strong></div></section><section class="system"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><h3 style="margin:0">Система NEIRO MAX</h3><div class="sub">Живая архитектура и готовность модулей</div></div><div class="mode good" id="sysver">v1.3</div></div><div class="pipeline" id="pipeline"></div><div class="module-grid" id="modules"></div></section><div class="grid"><section class="card"><h3>Проекты</h3><div id="projects"></div></section><section class="card"><h3>Выбранный проект</h3><div id="detail" class="sub">Выбери проект слева.</div><hr style="border-color:#273142;margin:20px 0"><h3>Нужно твоё решение</h3><div id="approvals"></div><hr style="border-color:#273142;margin:20px 0"><h3>Подключения</h3><button class="btn secondary" onclick="conn()">Проверить</button><div id="connections" style="margin-top:12px"></div></section></div>
 <div id="projectsView" class="view"><section class="card"><h2 class="section-title">Проекты</h2><div class="sub">Все проекты, их статус, тип и назначенные агенты.</div><div id="projectsFull" style="margin-top:14px"></div></section></div>
 <div id="agentsView" class="view"><section class="card"><h2 class="section-title">Работоботы</h2><div class="sub">Исполнители системы и их роль в цепочке.</div><div id="agentsFull" class="module-grid" style="margin-top:14px"></div></section></div>
 <div id="connectionsView" class="view"><section class="card"><h2 class="section-title">Подключения</h2><div class="sub">Состояние внешних сервисов и инфраструктуры.</div><button class="btn secondary" style="margin-top:14px" onclick="connFull()">Обновить статус</button><div id="connectionsFull" style="margin-top:14px"></div></section></div>
