@@ -418,6 +418,7 @@ def system_state():
             {"name":"PostgreSQL","status":"ACTIVE" if db_ready() else "OFF"},
             {"name":"Approval Center","status":"ACTIVE" if db_ready() else "OFF"},
             {"name":"Project Artifacts","status":"ACTIVE"},
+            {"name":"Website Generator","status":"ACTIVE"},
             {"name":"Execution Gate","status":"ACTIVE"},
             {"name":"GitHub Adapter","status":"READY" if os.getenv("GITHUB_TOKEN") else "WAITING_CONNECTION"},
             {"name":"Railway Adapter","status":"READY" if os.getenv("RAILWAY_TOKEN") else "WAITING_CONNECTION"},
@@ -582,7 +583,6 @@ def reject(approval_id: int):
 @app.get("/api/connections")
 def connections():
     defs = [
-        ("OpenAI", ["OPENAI_API_KEY"]),
         ("GitHub", ["GITHUB_TOKEN"]),
         ("Railway", ["RAILWAY_TOKEN"]),
         ("Telegram", ["TELEGRAM_TOKEN"]),
@@ -590,15 +590,24 @@ def connections():
         ("Database", ["DATABASE_URL"]),
     ]
     items = []
+    openai_key = bool(os.getenv("OPENAI_API_KEY"))
+    items.append({
+        "name": "OpenAI",
+        "status": "ACTIVE" if ai_ready() else ("KEY_CONNECTED_EXECUTION_OFF" if openai_key else "NOT_CONFIGURED"),
+        "missing_names": [] if openai_key else ["OPENAI_API_KEY"],
+    })
     for name, keys in defs:
         missing = [k for k in keys if not os.getenv(k)]
         items.append({"name": name, "status": "CONNECTED" if not missing else "NOT_CONFIGURED", "missing_names": missing})
-    connected = sum(i["status"] == "CONNECTED" for i in items)
+    connected = sum(i["status"] in ("CONNECTED", "ACTIVE", "KEY_CONNECTED_EXECUTION_OFF") for i in items)
+    infrastructure_ready = all(os.getenv(k) for k in ["GITHUB_TOKEN", "RAILWAY_TOKEN", "DATABASE_URL"])
     return {
         "summary": {
             "connected": connected,
             "total": len(items),
-            "production_ready": all(os.getenv(k) for k in ["OPENAI_API_KEY", "GITHUB_TOKEN", "RAILWAY_TOKEN", "DATABASE_URL"]),
+            "production_ready": infrastructure_ready,
+            "infrastructure_ready": infrastructure_ready,
+            "ai_execution": "ON" if ai_ready() else "OFF",
             "agent_mode": "AI" if ai_ready() else "DEMO",
             "model": model_name() if ai_ready() else None
         },
@@ -631,7 +640,7 @@ async function health(){let h=await fetch('/api/health').then(r=>r.json());let m
 async function load(){let [ps,pa]=await Promise.all([fetch('/api/projects',{cache:'no-store'}).then(r=>r.json()),fetch('/api/approvals?status=PENDING',{cache:'no-store'}).then(r=>r.json())]);n.textContent=ps.length;r.textContent=ps.filter(x=>x.status==='RUNNING'||x.status==='DEPLOYING').length;w.textContent=pa.length;let root=projects;root.innerHTML=ps.length?'':'<div class="sub">Пока пусто. Дай первую команду.</div>';ps.slice().reverse().forEach(p=>{let d=document.createElement('div');d.className='project';d.onclick=()=>show(p.id);d.innerHTML='<b>#'+p.id+' '+esc(p.name)+'</b><div class="sub">'+p.project_type+' · <span class="'+(p.status==='FAILED'||p.status==='DEPLOY_FAILED'?'bad':p.status==='WAITING_APPROVAL'||p.status==='DEPLOYING'?'warning':'good')+'">'+p.status+'</span> · '+p.agent_mode+'</div>'+(p.publication&&p.publication.public_url?'<div style="margin-top:6px"><a class="good" href="'+esc(p.publication.public_url)+'" target="_blank" onclick="event.stopPropagation()">Открыть сайт ↗</a></div>':'')+'<div>'+p.assigned_agents.map(a=>'<span class="tag">'+a+'</span>').join('')+'</div>';root.appendChild(d)})}
 async function loadFullProjects(){let ps=await fetch('/api/projects').then(r=>r.json());projectsFull.innerHTML=ps.length?'':'<div class="sub">Проектов пока нет.</div>';ps.slice().reverse().forEach(p=>{let d=document.createElement('div');d.className='project';d.onclick=()=>openWorkspace(p.id);d.innerHTML='<b>#'+p.id+' '+esc(p.name)+'</b><div class="sub">'+esc(p.project_type)+' · '+esc(p.status)+' · '+esc(p.agent_mode)+'</div>'+(p.publication&&p.publication.public_url?'<div style="margin-top:6px"><a class="good" href="'+esc(p.publication.public_url)+'" target="_blank" onclick="event.stopPropagation()">Открыть сайт ↗</a></div>':'')+'<div>'+p.assigned_agents.map(a=>'<span class="tag">'+esc(a)+'</span>').join('')+'</div>';projectsFull.appendChild(d)})}
 async function loadAgents(){let d=await fetch('/api/system-state').then(r=>r.json());let roles=[['Analyst','Разбирает запрос и формирует ТЗ'],['Developer','Создаёт реализацию и файлы проекта'],['QA','Проверяет результат и останавливает ошибки'],['Approval','Ждёт твоего решения перед внешним действием'],['GitHub','Готовит публикацию проекта'],['Railway','Готовит развёртывание сервиса']];agentsFull.innerHTML=roles.map(x=>'<div class="module"><b>'+x[0]+'</b><span class="sub">'+x[1]+'</span></div>').join('')}
-async function connFull(){let d=await fetch('/api/connections').then(r=>r.json());connectionsFull.innerHTML='<div class="'+(d.summary.production_ready?'good':'warning')+'">Production ready: '+(d.summary.production_ready?'ДА':'НЕТ')+'</div>'+d.items.map(x=>'<div class="module" style="margin-top:8px"><b>'+esc(x.name)+'</b><span class="'+(x.status==='CONNECTED'?'good':'warning')+'">'+esc(x.status)+'</span>'+(x.missing_names.length?'<div class="sub">Не настроено: '+x.missing_names.map(esc).join(', ')+'</div>':'')+'</div>').join('')}
+async function connFull(){let d=await fetch('/api/connections',{cache:'no-store'}).then(r=>r.json());connectionsFull.innerHTML='<div class="'+(d.summary.infrastructure_ready?'good':'warning')+'">Инфраструктура готова: '+(d.summary.infrastructure_ready?'ДА':'НЕТ')+'</div><div class="sub" style="margin-top:6px">AI execution: '+esc(d.summary.ai_execution)+' · Agent mode: '+esc(d.summary.agent_mode)+'</div>'+d.items.map(x=>'<div class="module" style="margin-top:8px"><b>'+esc(x.name)+'</b><span class="'+(x.status==='CONNECTED'||x.status==='ACTIVE'?'good':x.status==='KEY_CONNECTED_EXECUTION_OFF'?'warning':'warning')+'">'+esc(x.status)+'</span>'+(x.missing_names.length?'<div class="sub">Не настроено: '+x.missing_names.map(esc).join(', ')+'</div>':'')+'</div>').join('')}
 async function openWorkspace(id){
   activeProjectId=id;
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
@@ -664,7 +673,7 @@ async function show(id){
 async function go(){let command=cmd.value.trim();if(!command)return;go.disabled=true;msg.textContent='Orchestrator запускает цепочку...';let p=await fetch('/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command,autonomy_level:2})}).then(r=>r.json());let done=await fetch('/api/pipeline/'+p.id+'/run',{method:'POST'}).then(r=>r.json());msg.textContent=done.status==='FAILED'?'Цепочка остановлена: QA/агент сообщил об ошибке.':'Цепочка завершена до точки подтверждения.';cmd.value='';go.disabled=false;await load();show(p.id)}
 async function approvalLoad(){let a=await fetch('/api/approvals?status=PENDING').then(r=>r.json());approvals.innerHTML=a.length?'':'<div class="sub">Нет ожидающих решений.</div>';a.forEach(x=>{let d=document.createElement('div');d.className='approval';d.innerHTML='<b>Проект #'+x.project_id+'</b><div class="warning">'+esc(x.action)+'</div><div class="sub">'+(x.execution_status?('Исполнение: '+esc(x.execution_status)+(x.execution_message?' · '+esc(x.execution_message):'')):'')+'</div><div class="approval-actions"><button class="btn approve" onclick="decide('+x.id+',\'approve\')">Одобрить</button><button class="btn reject" onclick="decide('+x.id+',\'reject\')">Отклонить</button></div>';approvals.appendChild(d)})}
 async function decide(id,what){await fetch('/api/approvals/'+id+'/'+what,{method:'POST'});await approvalLoad();await load()}
-async function conn(){let d=await fetch('/api/connections').then(r=>r.json());connections.innerHTML='<div class="'+(d.summary.production_ready?'good':'warning')+'">Production ready: '+(d.summary.production_ready?'ДА':'НЕТ')+'</div><div class="sub">Agent mode: '+d.summary.agent_mode+'</div>'+d.items.map(x=>'<div class="sub">'+x.name+': '+x.status+(x.missing_names.length?' ('+x.missing_names.join(', ')+')':'')+'</div>').join('')}
+async function conn(){let d=await fetch('/api/connections',{cache:'no-store'}).then(r=>r.json());connections.innerHTML='<div class="'+(d.summary.infrastructure_ready?'good':'warning')+'">Инфраструктура готова: '+(d.summary.infrastructure_ready?'ДА':'НЕТ')+'</div><div class="sub">AI execution: '+d.summary.ai_execution+' · Agent mode: '+d.summary.agent_mode+'</div>'+d.items.map(x=>'<div class="sub">'+x.name+': '+x.status+(x.missing_names.length?' ('+x.missing_names.join(', ')+')':'')+'</div>').join('')}
 async function systemState(){let d=await fetch('/api/system-state').then(r=>r.json());sysver.textContent=d.version;pipeline.innerHTML=d.pipeline.map(x=>'<span class="step">'+esc(x)+'</span>').join('<span class="sub">→</span>');modules.innerHTML=d.modules.map(x=>'<div class="module"><b>'+esc(x.name)+'</b><span class="'+(x.status==='ACTIVE'||x.status==='READY'?'good':x.status==='PREPARED'?'warning':'sub')+'">'+esc(x.status)+'</span></div>').join('')}
 health();load();conn();approvalLoad();systemState();
 let refreshBusy=false;
