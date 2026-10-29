@@ -417,7 +417,7 @@ def health():
     return {
         "status": "ok",
         "app": "NEIRO MAX CONTROL",
-        "version": "2.1-live-sync",
+        "version": "2.5-archive",
         "agent_mode": "AI" if ai_ready() else "DEMO",
         "database": "CONNECTED" if db_ready() else "NOT_CONFIGURED",
         "auth": "ENABLED" if auth_enabled() else "NOT_CONFIGURED",
@@ -427,7 +427,7 @@ def health():
 @app.get("/api/system-state")
 def system_state():
     return {
-        "version": "1.9-live-deployment-status",
+        "version": "2.5-archive",
         "modules": [
             {"name":"PostgreSQL","status":"ACTIVE" if db_ready() else "OFF"},
             {"name":"Approval Center","status":"ACTIVE" if db_ready() else "OFF"},
@@ -715,7 +715,28 @@ function switchView(id,el){
 }
 
 async function health(){let h=await fetch('/api/health').then(r=>r.json());let m=document.getElementById('mode');m.textContent=h.agent_mode+(h.model?' · '+h.model:'');m.className='mode '+(h.agent_mode==='AI'?'good':'warning')}
-async function load(){let [ps,pa]=await Promise.all([fetch('/api/projects',{cache:'no-store'}).then(r=>r.json()),fetch('/api/approvals?status=PENDING',{cache:'no-store'}).then(r=>r.json())]);n.textContent=ps.length;r.textContent=ps.filter(x=>x.status==='RUNNING'||x.status==='DEPLOYING').length;w.textContent=pa.length;let root=projects;root.innerHTML=ps.length?'':'<div class="sub">Пока пусто. Дай первую команду.</div>';ps.slice().reverse().forEach(p=>{let d=document.createElement('div');d.className='project';d.onclick=()=>show(p.id);d.innerHTML='<b>#'+p.id+' '+esc(p.name)+'</b><div class="sub">'+p.project_type+' · <span class="'+(p.status==='FAILED'||p.status==='DEPLOY_FAILED'?'bad':p.status==='WAITING_APPROVAL'||p.status==='DEPLOYING'?'warning':'good')+'">'+p.status+'</span> · '+p.agent_mode+'</div>'+(p.publication&&p.publication.public_url?'<div style="margin-top:6px"><a class="good" href="'+esc(p.publication.public_url)+'" target="_blank" onclick="event.stopPropagation()">Открыть сайт ↗</a></div>':'')+'<div>'+p.assigned_agents.map(a=>'<span class="tag">'+a+'</span>').join('')+'</div>';root.appendChild(d)})}
+async function load(){
+  let [ps,pa]=await Promise.all([
+    fetch('/api/projects',{cache:'no-store'}).then(r=>r.json()),
+    fetch('/api/approvals?status=PENDING',{cache:'no-store'}).then(r=>r.json())
+  ]);
+  n.textContent=ps.length;
+  r.textContent=ps.filter(x=>x.status==='RUNNING'||x.status==='DEPLOYING').length;
+  w.textContent=pa.length;
+  let root=projects;
+  root.innerHTML=ps.length?'':'<div class="sub">Пока пусто. Дай первую команду.</div>';
+  ps.slice().reverse().forEach(p=>{
+    let d=document.createElement('div');
+    d.className='project';
+    d.onclick=()=>show(p.id);
+    d.innerHTML='<b>#'+p.id+' '+esc(p.name)+'</b>'
+      +'<div class="sub">'+esc(p.project_type)+' · <span class="'+(p.status==='FAILED'||p.status==='DEPLOY_FAILED'?'bad':p.status==='WAITING_APPROVAL'||p.status==='DEPLOYING'?'warning':'good')+'">'+esc(p.status)+'</span> · '+esc(p.agent_mode)+'</div>'
+      +(p.publication&&p.publication.public_url?'<div style="margin-top:6px"><a class="good" href="'+esc(p.publication.public_url)+'" target="_blank" onclick="event.stopPropagation()">Открыть сайт ↗</a></div>':'')
+      +'<div>'+p.assigned_agents.map(a=>'<span class="tag">'+esc(a)+'</span>').join('')+'</div>'
+      +'<div style="margin-top:10px"><button class="btn secondary" onclick="event.stopPropagation();archiveProject('+p.id+')">В архив</button></div>';
+    root.appendChild(d)
+  })
+}
 async function loadFullProjects(){
   let ps=await fetch('/api/projects',{cache:'no-store'}).then(r=>r.json());
   projectsFull.innerHTML=ps.length?'':'<div class="sub">Проектов пока нет.</div>';
